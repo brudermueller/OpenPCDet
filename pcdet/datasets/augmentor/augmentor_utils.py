@@ -41,7 +41,7 @@ def random_flip_along_y(gt_boxes, points):
     return gt_boxes, points
 
 
-def global_rotation(gt_boxes, points, rot_range):
+def global_rotation(gt_boxes, points, rot_range, rot_mat_alt=False):
     """
     Args:
         gt_boxes: (N, 7 + C), [x, y, z, dx, dy, dz, heading, [vx], [vy]]
@@ -50,13 +50,13 @@ def global_rotation(gt_boxes, points, rot_range):
     Returns:
     """
     noise_rotation = np.random.uniform(rot_range[0], rot_range[1])
-    points = common_utils.rotate_points_along_z(points[np.newaxis, :, :], np.array([noise_rotation]))[0]
-    gt_boxes[:, 0:3] = common_utils.rotate_points_along_z(gt_boxes[np.newaxis, :, 0:3], np.array([noise_rotation]))[0]
+    points = common_utils.rotate_points_along_z(points[np.newaxis, :, :], np.array([noise_rotation]), rot_mat_alt=rot_mat_alt)[0]
+    gt_boxes[:, 0:3] = common_utils.rotate_points_along_z(gt_boxes[np.newaxis, :, 0:3], np.array([noise_rotation]), rot_mat_alt=rot_mat_alt)[0]
     gt_boxes[:, 6] += noise_rotation
     if gt_boxes.shape[1] > 7:
         gt_boxes[:, 7:9] = common_utils.rotate_points_along_z(
             np.hstack((gt_boxes[:, 7:9], np.zeros((gt_boxes.shape[0], 1))))[np.newaxis, :, :],
-            np.array([noise_rotation])
+            np.array([noise_rotation]), rot_mat_alt=rot_mat_alt
         )[0][:, 0:2]
 
     return gt_boxes, points

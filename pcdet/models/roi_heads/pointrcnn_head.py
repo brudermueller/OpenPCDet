@@ -124,7 +124,8 @@ class PointRCNNHead(RoIHeadTemplate):
 
             pooled_features = pooled_features.view(-1, pooled_features.shape[-2], pooled_features.shape[-1])
             pooled_features[:, :, 0:3] = common_utils.rotate_points_along_z(
-                pooled_features[:, :, 0:3], -rois.view(-1, rois.shape[-1])[:, 6]
+                pooled_features[:, :, 0:3], -rois.view(-1, rois.shape[-1])[:, 6], 
+                rot_mat_alt=self.model_cfg.DATA_CONFIG._ROT_MAT_ALT
             )
             pooled_features[pooled_empty_flag.view(-1) > 0] = 0
         return pooled_features

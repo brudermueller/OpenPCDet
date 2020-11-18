@@ -40,10 +40,14 @@ class Detector3DTemplate(nn.Module):
             'point_cloud_range': self.dataset.point_cloud_range,
             'voxel_size': self.dataset.voxel_size
         }
+        print('Module Topology: ')
         for module_name in self.module_topology:
             module, model_info_dict = getattr(self, 'build_%s' % module_name)(
                 model_info_dict=model_info_dict
             )
+            if module == None: 
+                print(module_name)
+            # print(model_info_dict)
             self.add_module(module_name, module)
         return model_info_dict['module_list']
 

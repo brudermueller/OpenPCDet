@@ -26,6 +26,8 @@ def model_fn_decorator():
     ModelReturn = namedtuple('ModelReturn', ['loss', 'tb_dict', 'disp_dict'])
 
     def model_func(model, batch_dict):
+        # print("----- Loading data to gpu ------- \n{}".format(batch_dict.keys()))
+        # print('Batch size: {}'.format(batch_dict['batch_size']))
         load_data_to_gpu(batch_dict)
         ret_dict, tb_dict, disp_dict = model(batch_dict)
 

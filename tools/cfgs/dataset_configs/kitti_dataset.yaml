@@ -39,6 +39,7 @@ DATA_AUGMENTOR:
 
         - NAME: random_world_rotation
           WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+          ROT_MAT_ALT: False
 
         - NAME: random_world_scaling
           WORLD_SCALE_RANGE: [0.95, 1.05]
@@ -54,6 +55,7 @@ POINT_FEATURE_ENCODING: {
 DATA_PROCESSOR:
     - NAME: mask_points_and_boxes_outside_range
       REMOVE_OUTSIDE_BOXES: True
+      BOX_ENC_DEFAULT: True
 
     - NAME: shuffle_points
       SHUFFLE_ENABLED: {

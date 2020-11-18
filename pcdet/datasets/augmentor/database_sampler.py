@@ -53,7 +53,7 @@ class DataBaseSampler(object):
             pre_len = len(dinfos)
             new_db_infos[key] = [
                 info for info in dinfos
-                if info['difficulty'] not in removed_difficulty
+                # if info['difficulty'] not in removed_difficulty
             ]
             if self.logger is not None:
                 self.logger.info('Database filter by difficulty %s: %d => %d' % (key, pre_len, len(new_db_infos[key])))

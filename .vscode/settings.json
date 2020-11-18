@@ -1,0 +1,4 @@
+{
+    "python.pythonPath": "/home/crowdbot/miniconda3/envs/torch-py37/bin/python",
+    "python.linting.enabled": false
+}

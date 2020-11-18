@@ -123,7 +123,8 @@ class PVRCNNHead(RoIHeadTemplate):
 
         local_roi_grid_points = self.get_dense_grid_points(rois, batch_size_rcnn, grid_size)  # (B, 6x6x6, 3)
         global_roi_grid_points = common_utils.rotate_points_along_z(
-            local_roi_grid_points.clone(), rois[:, 6]
+            local_roi_grid_points.clone(), rois[:, 6], 
+            rot_mat_alt=self.model_cfg.DATA_CONFIG._ROT_MAT_ALT
         ).squeeze(dim=1)
         global_center = rois[:, 0:3].clone()
         global_roi_grid_points += global_center.unsqueeze(dim=1)

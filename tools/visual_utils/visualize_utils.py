@@ -32,8 +32,8 @@ def rotate_points_along_z(points, angle):
     zeros = angle.new_zeros(points.shape[0])
     ones = angle.new_ones(points.shape[0])
     rot_matrix = torch.stack((
-        cosa,  sina, zeros,
-        -sina, cosa, zeros,
+        cosa,  -sina, zeros,
+        sina, cosa, zeros,
         zeros, zeros, ones
     ), dim=1).view(-1, 3, 3).float()
     points_rot = torch.matmul(points[:, :, 0:3], rot_matrix)
@@ -43,13 +43,13 @@ def rotate_points_along_z(points, angle):
 
 def boxes_to_corners_3d(boxes3d):
     """
-        7 -------- 4
-       /|         /|
-      6 -------- 5 .
-      | |        | |
-      . 3 -------- 0
-      |/         |/
-      2 -------- 1
+            7 -------- 6
+           /|         /|
+          4 -------- 5 .
+          | |        | |
+          . 3 -------- 2
+          |/         |/
+          0 -------- 1
     Args:
         boxes3d:  (N, 7) [x, y, z, dx, dy, dz, heading], (x, y, z) is the box center
 
@@ -57,12 +57,33 @@ def boxes_to_corners_3d(boxes3d):
     """
     boxes3d, is_numpy = check_numpy_to_torch(boxes3d)
 
+    # CUSTOM
+    # template = boxes3d.new_tensor((
+    #    [ 1., -1., -1.],
+    #    [ 1.,  1., -1.],
+    #    [-1.,  1., -1.],
+    #    [-1., -1., -1.],
+    #    [ 1., -1.,  1.],
+    #    [ 1.,  1.,  1.],
+    #    [-1.,  1.,  1.],
+    #    [-1., -1.,  1.],
+    # )) / 2
+
+    # KITTI 
     template = boxes3d.new_tensor((
-        [1, 1, -1], [1, -1, -1], [-1, -1, -1], [-1, 1, -1],
-        [1, 1, 1], [1, -1, 1], [-1, -1, 1], [-1, 1, 1],
+        [ 1,  1, -1], 
+        [ 1, -1, -1], 
+        [-1, -1, -1], 
+        [-1,  1, -1],
+        [ 1,  1,  1], 
+        [ 1, -1,  1], 
+        [-1, -1,  1], 
+        [-1,  1,  1],
     )) / 2
 
     corners3d = boxes3d[:, None, 3:6].repeat(1, 8, 1) * template[None, :, :]
+    # ATTENTTION + pi for JRDB only for angle!!!!!
+    # corners3d = rotate_points_along_z(corners3d.view(-1, 8, 3), boxes3d[:, 6]+ np.pi).view(-1, 8, 3)
     corners3d = rotate_points_along_z(corners3d.view(-1, 8, 3), boxes3d[:, 6]).view(-1, 8, 3)
     corners3d += boxes3d[:, None, 0:3]
 
@@ -84,9 +105,9 @@ def visualize_pts(pts, fig=None, bgcolor=(0, 0, 0), fgcolor=(1.0, 1.0, 1.0),
                           colormap='gnuplot', scale_factor=1, figure=fig)
     if draw_origin:
         mlab.points3d(0, 0, 0, color=(1, 1, 1), mode='cube', scale_factor=0.2)
-        mlab.plot3d([0, 3], [0, 0], [0, 0], color=(0, 0, 1), tube_radius=0.1)
-        mlab.plot3d([0, 0], [0, 3], [0, 0], color=(0, 1, 0), tube_radius=0.1)
-        mlab.plot3d([0, 0], [0, 0], [0, 3], color=(1, 0, 0), tube_radius=0.1)
+        mlab.plot3d([0, 1.0], [0, 0], [0, 0], color=(1, 0, 0), tube_radius=0.025)
+        mlab.plot3d([0, 0], [0, 1.0], [0, 0], color=(0, 1, 0), tube_radius=0.025)
+        mlab.plot3d([0, 0], [0, 0], [0, 1.0], color=(0, 0, 1), tube_radius=0.025)
 
     return fig
 
@@ -131,7 +152,7 @@ def draw_grid(x1, y1, x2, y2, fig, tube_radius=None, color=(0.5, 0.5, 0.5)):
     return fig
 
 
-def draw_multi_grid_range(fig, grid_size=20, bv_range=(-60, -60, 60, 60)):
+def draw_multi_grid_range(fig, grid_size=5, bv_range=(-60, -60, 60, 60)):
     for x in range(bv_range[0], bv_range[2], grid_size):
         for y in range(bv_range[1], bv_range[3], grid_size):
             fig = draw_grid(x, y, x + grid_size, y + grid_size, fig)
@@ -151,8 +172,8 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_scores=None, ref_labe
     if ref_labels is not None and not isinstance(ref_labels, np.ndarray):
         ref_labels = ref_labels.cpu().numpy()
 
-    fig = visualize_pts(points)
-    fig = draw_multi_grid_range(fig, bv_range=(0, -40, 80, 40))
+    fig = visualize_pts(points, show_intensity=True, size=(1000, 600))
+    fig = draw_multi_grid_range(fig, bv_range=(-5, -20, 40, 20))
     if gt_boxes is not None:
         corners3d = boxes_to_corners_3d(gt_boxes)
         fig = draw_corners3d(corners3d, fig=fig, color=(0, 0, 1), max_num=100)

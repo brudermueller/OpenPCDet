@@ -24,6 +24,10 @@ def eval_one_epoch(cfg, model, dataloader, epoch_id, logger, dist_test=False, sa
 
     final_output_dir = result_dir / 'final_result' / 'data'
     if save_to_file:
+        print('** Saving to final output_dir: {} **'.format(final_output_dir))
+    else: 
+        print('** WARNING - not saving final output to file **')
+    if save_to_file:
         final_output_dir.mkdir(parents=True, exist_ok=True)
 
     metric = {
@@ -56,7 +60,7 @@ def eval_one_epoch(cfg, model, dataloader, epoch_id, logger, dist_test=False, sa
         with torch.no_grad():
             pred_dicts, ret_dict = model(batch_dict)
         disp_dict = {}
-
+        # print(ret_dict)
         statistics_info(cfg, ret_dict, metric, disp_dict)
         annos = dataset.generate_prediction_dicts(
             batch_dict, pred_dicts, class_names,
@@ -116,7 +120,7 @@ def eval_one_epoch(cfg, model, dataloader, epoch_id, logger, dist_test=False, sa
     logger.info(result_str)
     ret_dict.update(result_dict)
 
-    logger.info('Result is save to %s' % result_dir)
+    logger.info('Result is saved to %s' % result_dir)
     logger.info('****************Evaluation done.*****************')
     return ret_dict
 

@@ -105,6 +105,7 @@ def train_model(model, optimizer, train_loader, model_func, lr_scheduler, optim_
                         os.remove(ckpt_list[cur_file_idx])
 
                 ckpt_name = ckpt_save_dir / ('checkpoint_epoch_%d' % trained_epoch)
+                print('Save checkpoint to: {}'.format(ckpt_name))
                 save_checkpoint(
                     checkpoint_state(model, optimizer, trained_epoch, accumulated_iter), filename=ckpt_name,
                 )

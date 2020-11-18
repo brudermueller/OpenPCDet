@@ -1,7 +1,9 @@
-CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
+CLASS_NAMES: ['Pedestrian']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
+    _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset.yaml #custom_dataset.yaml
+    _BOX_ENC_DEFAULT: True # affects the style of how the corners are encoded 
+    _ROT_MAT_ALT: True # if True the minus sign of the yaw rotation matrix of the sinus is in the second column instead of the first
 
     DATA_PROCESSOR:
         -   NAME: mask_points_and_boxes_outside_range
@@ -9,7 +11,7 @@ DATA_CONFIG:
 
         -   NAME: sample_points
             NUM_POINTS: {
-                'train': 16384,
+                'train': 32768, #16384,
                 'test': 16384
             }
 
@@ -46,8 +48,9 @@ MODEL:
             BOX_CODER_CONFIG: {
                 'use_mean_size': True,
                 'mean_size': [
-                    [3.9, 1.6, 1.56],
-                    [0.8, 0.6, 1.73],
+                    [3.9, 1.6, 1.56], # hwl: [1.56, 1.6, 3.9], lwh 
+                    [0.8, 0.6, 1.73], #l,w,h
+                    # [0.6, 0.8, 1.73],  # = w,l,h (dx, dy, dz) / [1.73, 0.6, 0.8] = hwl  
                     [1.76, 0.6, 1.73]
                 ]
             }
@@ -67,7 +70,7 @@ MODEL:
         ROI_POINT_POOL:
             POOL_EXTRA_WIDTH: [0.0, 0.0, 0.0]
             NUM_SAMPLED_POINTS: 512
-            DEPTH_NORMALIZER: 70.0
+            DEPTH_NORMALIZER: 20.0
 
         XYZ_UP_LAYER: [128, 128]
         CLS_FC: [256, 256]
@@ -105,12 +108,12 @@ MODEL:
             SAMPLE_ROI_BY_EACH_CLASS: True
             CLS_SCORE_TYPE: cls
 
-            CLS_FG_THRESH: 0.6
-            CLS_BG_THRESH: 0.45
-            CLS_BG_THRESH_LO: 0.1
+            CLS_FG_THRESH: 0.4 #0.5 # 0.6
+            CLS_BG_THRESH: 0.35 #0.45
+            CLS_BG_THRESH_LO: 0.05 # 0.1
             HARD_BG_RATIO: 0.8
 
-            REG_FG_THRESH: 0.55
+            REG_FG_THRESH: 0.2 #0.3 #0.55
 
         LOSS_CONFIG:
             CLS_LOSS: BinaryCrossEntropy
@@ -139,8 +142,8 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 2
-    NUM_EPOCHS: 80
+    BATCH_SIZE_PER_GPU: 3
+    NUM_EPOCHS: 80 #80
 
     OPTIMIZER: adam_onecycle
     LR: 0.01

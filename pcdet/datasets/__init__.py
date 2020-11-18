@@ -7,11 +7,15 @@ from pcdet.utils import common_utils
 from .dataset import DatasetTemplate
 from .kitti.kitti_dataset import KittiDataset
 from .nuscenes.nuscenes_dataset import NuScenesDataset
+from .custom.custom_dataset import CustomDataset
+from .JRDB.jrdb_dataset import JrdbDataset
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
     'KittiDataset': KittiDataset,
-    'NuScenesDataset': NuScenesDataset
+    'NuScenesDataset': NuScenesDataset,
+    'CustomDataset': CustomDataset,
+    'JrdbDataset': JrdbDataset
 }
 
 

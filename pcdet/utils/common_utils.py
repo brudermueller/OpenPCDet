@@ -31,11 +31,12 @@ def drop_info_with_name(info, name):
     return ret_info
 
 
-def rotate_points_along_z(points, angle):
+def rotate_points_along_z(points, angle, rot_mat_alt=False):
     """
     Args:
         points: (B, N, 3 + C)
         angle: (B), angle along z-axis, angle increases x ==> y
+        rot_mat_alt: if True the minus sign of the yaw rotation matrix of the sinus is in the second column instead of the first
     Returns:
 
     """
@@ -46,11 +47,18 @@ def rotate_points_along_z(points, angle):
     sina = torch.sin(angle)
     zeros = angle.new_zeros(points.shape[0])
     ones = angle.new_ones(points.shape[0])
-    rot_matrix = torch.stack((
-        cosa,  sina, zeros,
-        -sina, cosa, zeros,
-        zeros, zeros, ones
-    ), dim=1).view(-1, 3, 3).float()
+    if not rot_mat_alt:
+        rot_matrix = torch.stack((
+            cosa,  sina, zeros,
+            -sina, cosa, zeros,
+            zeros, zeros, ones
+        ), dim=1).view(-1, 3, 3).float()
+    else: 
+        rot_matrix = torch.stack((
+            cosa,  -sina, zeros,
+            sina, cosa, zeros,
+            zeros, zeros, ones
+        ), dim=1).view(-1, 3, 3).float()
     points_rot = torch.matmul(points[:, :, 0:3], rot_matrix)
     points_rot = torch.cat((points_rot, points[:, :, 3:]), dim=-1)
     return points_rot.numpy() if is_numpy else points_rot

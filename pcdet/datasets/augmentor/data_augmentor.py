@@ -61,7 +61,8 @@ class DataAugmentor(object):
         if not isinstance(rot_range, list):
             rot_range = [-rot_range, rot_range]
         gt_boxes, points = augmentor_utils.global_rotation(
-            data_dict['gt_boxes'], data_dict['points'], rot_range=rot_range
+            data_dict['gt_boxes'], data_dict['points'], 
+            rot_range=rot_range, rot_mat_alt=config['ROT_MAT_ALT']
         )
 
         data_dict['gt_boxes'] = gt_boxes

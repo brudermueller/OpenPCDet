@@ -5,6 +5,7 @@ from scipy.spatial import Delaunay
 
 from ..ops.roiaware_pool3d import roiaware_pool3d_utils
 from . import common_utils
+from .  import custom_data_utils
 
 
 def in_hull(p, hull):
@@ -24,7 +25,7 @@ def in_hull(p, hull):
     return flag
 
 
-def boxes_to_corners_3d(boxes3d):
+def boxes_to_corners_3d(boxes3d, rot_mat_alt=False):
     """
         7 -------- 4
        /|         /|
@@ -41,18 +42,58 @@ def boxes_to_corners_3d(boxes3d):
     boxes3d, is_numpy = common_utils.check_numpy_to_torch(boxes3d)
 
     template = boxes3d.new_tensor((
-        [1, 1, -1], [1, -1, -1], [-1, -1, -1], [-1, 1, -1],
-        [1, 1, 1], [1, -1, 1], [-1, -1, 1], [-1, 1, 1],
+        [ 1,  1, -1], 
+        [ 1, -1, -1], 
+        [-1, -1, -1], 
+        [-1,  1, -1],
+        [ 1,  1,  1], 
+        [ 1, -1,  1], 
+        [-1, -1,  1], 
+        [-1,  1,  1],
     )) / 2
 
     corners3d = boxes3d[:, None, 3:6].repeat(1, 8, 1) * template[None, :, :]
-    corners3d = common_utils.rotate_points_along_z(corners3d.view(-1, 8, 3), boxes3d[:, 6]).view(-1, 8, 3)
+    corners3d = common_utils.rotate_points_along_z(corners3d.view(-1, 8, 3), boxes3d[:, 6], rot_mat_alt=rot_mat_alt).view(-1, 8, 3)
     corners3d += boxes3d[:, None, 0:3]
 
     return corners3d.numpy() if is_numpy else corners3d
 
 
-def mask_boxes_outside_range_numpy(boxes, limit_range, min_num_corners=1):
+def boxes_to_corners_3d_custom(boxes3d):
+    """
+        7 -------- 4
+       /|         /|
+      6 -------- 5 .
+      | |        | |
+      . 3 -------- 0
+      |/         |/
+      2 -------- 1
+    Args:
+        boxes3d:  (N, 7) [x, y, z, w, l, h, heading], (x, y, z) is the box center
+
+    Returns:
+    """
+    boxes3d, is_numpy = common_utils.check_numpy_to_torch(boxes3d)
+
+    template = boxes3d.new_tensor((
+       [ 1., -1., -1.],
+       [ 1.,  1., -1.],
+       [-1.,  1., -1.],
+       [-1., -1., -1.],
+       [ 1., -1.,  1.],
+       [ 1.,  1.,  1.],
+       [-1.,  1.,  1.],
+       [-1., -1.,  1.],
+    )) / 2
+
+    corners3d = boxes3d[:, None, 3:6].repeat(1, 8, 1) * template[None, :, :]
+    corners3d = common_utils.rotate_points_along_z(corners3d.view(-1, 8, 3), boxes3d[:, 6], rot_mat_alt=False).view(-1, 8, 3)
+    corners3d += boxes3d[:, None, 0:3]
+
+    return corners3d.numpy() if is_numpy else corners3d    
+
+
+def mask_boxes_outside_range_numpy(boxes, limit_range, min_num_corners=1, bonx_enc_default=True, rot_mat_alt=False):
     """
     Args:
         boxes: (N, 7) [x, y, z, dx, dy, dz, heading, ...], (x, y, z) is the box center
@@ -64,7 +105,10 @@ def mask_boxes_outside_range_numpy(boxes, limit_range, min_num_corners=1):
     """
     if boxes.shape[1] > 7:
         boxes = boxes[:, 0:7]
-    corners = boxes_to_corners_3d(boxes)  # (N, 8, 3)
+    if bonx_enc_default: 
+        corners = boxes_to_corners_3d(boxes, rot_mat_alt=rot_mat_alt)  # (N, 8, 3)
+    else: 
+        corners = boxes_to_corners_3d_custom(boxes)
     mask = ((corners >= limit_range[0:3]) & (corners <= limit_range[3:6])).all(axis=2)
     mask = mask.sum(axis=1) >= min_num_corners  # (N)
 
@@ -164,6 +208,18 @@ def boxes3d_lidar_to_kitti_camera(boxes3d_lidar, calib):
     # xyz_cam[:, 1] += h.reshape(-1) / 2
     r = -r - np.pi / 2
     return np.concatenate([xyz_cam, l, h, w, r], axis=-1)
+
+def boxes3d_lidar_to_cam_custom(boxes3d_lidar): 
+    """
+    :param boxes3d_lidar: (N, 7) [x, y, z, dx, dy, dz, heading], (x, y, z) is the box center
+    :param calib:
+    :return:
+        boxes3d_camera: (N, 7) [x, y, z, w, h, l, r] in rect camera coords
+    """
+    xyz_lidar = boxes3d_lidar[:, 0:3]
+    w, l, h, r = boxes3d_lidar[:, 3:4], boxes3d_lidar[:, 4:5], boxes3d_lidar[:, 5:6], boxes3d_lidar[:, 6:7]
+    xyz_cam = custom_data_utils.pts_lidar_to_camera(xyz_lidar)
+    return np.concatenate([xyz_cam, w, h, l, r], axis=-1)
 
 
 def boxes3d_to_corners3d_kitti_camera(boxes3d, bottom_center=True):

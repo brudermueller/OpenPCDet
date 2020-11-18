@@ -206,7 +206,7 @@ class WeightedCrossEntropyLoss(nn.Module):
         return loss
 
 
-def get_corner_loss_lidar(pred_bbox3d: torch.Tensor, gt_bbox3d: torch.Tensor):
+def get_corner_loss_lidar(pred_bbox3d: torch.Tensor, gt_bbox3d: torch.Tensor, box_enc_default=True, rot_mat_alt=False):
     """
     Args:
         pred_bbox3d: (N, 7) float Tensor.
@@ -216,13 +216,20 @@ def get_corner_loss_lidar(pred_bbox3d: torch.Tensor, gt_bbox3d: torch.Tensor):
         corner_loss: (N) float Tensor.
     """
     assert pred_bbox3d.shape[0] == gt_bbox3d.shape[0]
-
-    pred_box_corners = box_utils.boxes_to_corners_3d(pred_bbox3d)
-    gt_box_corners = box_utils.boxes_to_corners_3d(gt_bbox3d)
+    if box_enc_default: 
+        pred_box_corners = box_utils.boxes_to_corners_3d(pred_bbox3d, rot_mat_alt=rot_mat_alt)
+        gt_box_corners = box_utils.boxes_to_corners_3d(gt_bbox3d, rot_mat_alt=rot_mat_alt)
+    else: # custom box encoding 
+        pred_box_corners = box_utils.boxes_to_corners_3d_custom(pred_bbox3d)
+        gt_box_corners = box_utils.boxes_to_corners_3d_custom(gt_bbox3d)
 
     gt_bbox3d_flip = gt_bbox3d.clone()
     gt_bbox3d_flip[:, 6] += np.pi
-    gt_box_corners_flip = box_utils.boxes_to_corners_3d(gt_bbox3d_flip)
+    if box_enc_default:
+        gt_box_corners_flip = box_utils.boxes_to_corners_3d(gt_bbox3d_flip, rot_mat_alt=rot_mat_alt)
+    else: 
+        gt_box_corners_flip = box_utils.boxes_to_corners_3d_custom(gt_bbox3d_flip)
+
     # (N, 8)
     corner_dist = torch.min(torch.norm(pred_box_corners - gt_box_corners, dim=2),
                             torch.norm(pred_box_corners - gt_box_corners_flip, dim=2))

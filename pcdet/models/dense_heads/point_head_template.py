@@ -115,7 +115,8 @@ class PointHeadTemplate(nn.Module):
                 point_part_labels_single = point_part_labels.new_zeros((bs_mask.sum(), 3))
                 transformed_points = points_single[fg_flag] - gt_box_of_fg_points[:, 0:3]
                 transformed_points = common_utils.rotate_points_along_z(
-                    transformed_points.view(-1, 1, 3), -gt_box_of_fg_points[:, 6]
+                    transformed_points.view(-1, 1, 3), -gt_box_of_fg_points[:, 6], 
+                    rot_mat_alt=self.model_cfg.DATA_CONFIG._ROT_MAT_ALT
                 ).view(-1, 3)
                 offset = torch.tensor([0.5, 0.5, 0.5]).view(1, 3).type_as(transformed_points)
                 point_part_labels_single[fg_flag] = (transformed_points / gt_box_of_fg_points[:, 3:6]) + offset

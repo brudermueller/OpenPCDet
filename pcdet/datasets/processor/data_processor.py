@@ -22,8 +22,11 @@ class DataProcessor(object):
         mask = common_utils.mask_points_by_range(data_dict['points'], self.point_cloud_range)
         data_dict['points'] = data_dict['points'][mask]
         if data_dict.get('gt_boxes', None) is not None and config.REMOVE_OUTSIDE_BOXES and self.training:
+            # print('****** Filter out boxes outside range ******')
+            
             mask = box_utils.mask_boxes_outside_range_numpy(
-                data_dict['gt_boxes'], self.point_cloud_range, min_num_corners=config.get('min_num_corners', 1)
+                data_dict['gt_boxes'], self.point_cloud_range, min_num_corners=config.get('min_num_corners', 1), 
+                bonx_enc_default=config.BOX_ENC_DEFAULT, rot_mat_alt=config.ROT_MAT_ALT
             )
             data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
         return data_dict
@@ -85,7 +88,7 @@ class DataProcessor(object):
         points = data_dict['points']
         if num_points < len(points):
             pts_depth = np.linalg.norm(points[:, 0:3], axis=1)
-            pts_near_flag = pts_depth < 40.0
+            pts_near_flag = pts_depth < 20.0
             far_idxs_choice = np.where(pts_near_flag == 0)[0]
             near_idxs = np.where(pts_near_flag == 1)[0]
             near_idxs_choice = np.random.choice(near_idxs, num_points - len(far_idxs_choice), replace=False)
@@ -101,7 +104,7 @@ class DataProcessor(object):
         else:
             choice = np.arange(0, len(points), dtype=np.int32)
             if num_points > len(points):
-                extra_choice = np.random.choice(choice, num_points - len(points), replace=False)
+                extra_choice = np.random.choice(choice, num_points - len(points), replace=True)
                 choice = np.concatenate((choice, extra_choice), axis=0)
             np.random.shuffle(choice)
         data_dict['points'] = points[choice]

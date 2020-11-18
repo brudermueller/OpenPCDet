@@ -115,7 +115,8 @@ class RoIHeadTemplate(nn.Module):
 
         # transfer LiDAR coords to local coords
         gt_of_rois = common_utils.rotate_points_along_z(
-            points=gt_of_rois.view(-1, 1, gt_of_rois.shape[-1]), angle=-roi_ry.view(-1)
+            points=gt_of_rois.view(-1, 1, gt_of_rois.shape[-1]), angle=-roi_ry.view(-1), 
+            rot_mat_alt=self.model_cfg.DATA_CONFIG._ROT_MAT_ALT
         ).view(batch_size, -1, gt_of_rois.shape[-1])
 
         # flip orientation if rois have opposite orientation
@@ -176,13 +177,15 @@ class RoIHeadTemplate(nn.Module):
                 ).view(-1, code_size)
 
                 rcnn_boxes3d = common_utils.rotate_points_along_z(
-                    rcnn_boxes3d.unsqueeze(dim=1), roi_ry
+                    rcnn_boxes3d.unsqueeze(dim=1), roi_ry, rot_mat_alt=self.model_cfg.DATA_CONFIG._ROT_MAT_ALT
                 ).squeeze(dim=1)
                 rcnn_boxes3d[:, 0:3] += roi_xyz
 
                 loss_corner = loss_utils.get_corner_loss_lidar(
                     rcnn_boxes3d[:, 0:7],
-                    gt_of_rois_src[fg_mask][:, 0:7]
+                    gt_of_rois_src[fg_mask][:, 0:7],
+                    box_enc_default=self.model_cfg.DATA_CONFIG._BOX_ENC_DEFAULT,
+                    rot_mat_alt=self.model_cfg.DATA_CONFIG._ROT_MAT_ALT
                 )
                 loss_corner = loss_corner.mean()
                 loss_corner = loss_corner * loss_cfgs.LOSS_WEIGHTS['rcnn_corner_weight']
@@ -251,7 +254,8 @@ class RoIHeadTemplate(nn.Module):
         batch_box_preds = self.box_coder.decode_torch(batch_box_preds, local_rois).view(-1, code_size)
 
         batch_box_preds = common_utils.rotate_points_along_z(
-            batch_box_preds.unsqueeze(dim=1), roi_ry
+            batch_box_preds.unsqueeze(dim=1), roi_ry, 
+            rot_mat_alt=self.model_cfg.DATA_CONFIG._ROT_MAT_ALT
         ).squeeze(dim=1)
         batch_box_preds[:, 0:3] += roi_xyz
         batch_box_preds = batch_box_preds.view(batch_size, -1, code_size)

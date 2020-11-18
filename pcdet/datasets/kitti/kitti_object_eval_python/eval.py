@@ -276,8 +276,8 @@ def compute_statistics_jit(overlaps,
 
 
 def get_split_parts(num, num_part):
-    same_part = num // num_part
-    remain_num = num % num_part
+    same_part = num // num_part # “floor” division (rounds down to nearest whole number)
+    remain_num = num % num_part 
     if same_part == 0:
         return [num]
 
@@ -379,11 +379,15 @@ def calculate_iou_partly(gt_annos, dt_annos, metric, num_parts=50):
             overlap_part = bev_box_overlap(gt_boxes, dt_boxes).astype(
                 np.float64)
         elif metric == 2:
-            loc = np.concatenate([a["location"] for a in gt_annos_part], 0)
-            dims = np.concatenate([a["dimensions"] for a in gt_annos_part], 0)
-            rots = np.concatenate([a["rotation_y"] for a in gt_annos_part], 0)
-            gt_boxes = np.concatenate(
-                [loc, dims, rots[..., np.newaxis]], axis=1)
+            try:
+                gt_boxes = gt_annos_part['gt_boxes_camera']
+            except KeyError: 
+                loc = np.concatenate([a["location"] for a in gt_annos_part], 0)
+                dims = np.concatenate([a["dimensions"] for a in gt_annos_part], 0)
+                rots = np.concatenate([a["rotation_y"] for a in gt_annos_part], 0)
+                gt_boxes = np.concatenate(
+                    [loc, dims, rots[..., np.newaxis]], axis=1)
+            # for predictions: location, dimensions and rotation saved in camera coords.         
             loc = np.concatenate([a["location"] for a in dt_annos_part], 0)
             dims = np.concatenate([a["dimensions"] for a in dt_annos_part], 0)
             rots = np.concatenate([a["rotation_y"] for a in dt_annos_part], 0)
