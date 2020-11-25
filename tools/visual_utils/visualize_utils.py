@@ -32,8 +32,8 @@ def rotate_points_along_z(points, angle):
     zeros = angle.new_zeros(points.shape[0])
     ones = angle.new_ones(points.shape[0])
     rot_matrix = torch.stack((
-        cosa,  -sina, zeros,
-        sina, cosa, zeros,
+        cosa,  sina, zeros,
+        -sina, cosa, zeros,
         zeros, zeros, ones
     ), dim=1).view(-1, 3, 3).float()
     points_rot = torch.matmul(points[:, :, 0:3], rot_matrix)
@@ -172,8 +172,8 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_scores=None, ref_labe
     if ref_labels is not None and not isinstance(ref_labels, np.ndarray):
         ref_labels = ref_labels.cpu().numpy()
 
-    fig = visualize_pts(points, show_intensity=True, size=(1000, 600))
-    fig = draw_multi_grid_range(fig, bv_range=(-5, -20, 40, 20))
+    fig = visualize_pts(points, bgcolor=(0.,0.,0.), show_intensity=True, size=(1000, 600))
+    # fig = draw_multi_grid_range(fig, bv_range=(-5, -20, 40, 20))
     if gt_boxes is not None:
         corners3d = boxes_to_corners_3d(gt_boxes)
         fig = draw_corners3d(corners3d, fig=fig, color=(0, 0, 1), max_num=100)
