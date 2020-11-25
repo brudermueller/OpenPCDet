@@ -9,7 +9,7 @@ import numpy as np
 
 from ...ops.roiaware_pool3d import roiaware_pool3d_utils
 from ...utils import (box_utils, common_utils, custom_data_utils,
-                      object3d_custom, jrdb_utils)
+                      object3d_jrdb, jrdb_utils, plot_utils)
 from ..dataset import DatasetTemplate
 
 
@@ -35,10 +35,13 @@ class JrdbDataset(DatasetTemplate):
         self.split_dir = os.path.join(self.root_path, self.split + '.txt')
         if self.split in ['train','val']:
             label_split = 'train'
-            self.label_dir = os.path.join(self.data_path, label_split + '_dataset', 'labels', 'labels_3d')
+            self.label_dir = os.path.join(self.data_path, f'{label_split}_dataset/labels/labels_3d')
         else: 
+            label_split = 'test'
             self.label_dir = None 
-            
+
+        self.image_path = os.path.join(self.data_path, f'{label_split}_dataset/images/image_stitched')
+
         if self.logger is not None: 
             self.logger.info('Load samples from %s' % self.split_dir)
 
@@ -99,6 +102,13 @@ class JrdbDataset(DatasetTemplate):
 
         data_dict = self.prepare_data(data_dict=input_dict)
         return data_dict 
+    
+    def get_image(self,index): 
+        frame = self.current_samples[index]
+        file_parts = frame.split('/')
+        sequence = file_parts[len(file_parts)-2]   
+        frame_num = file_parts[-1].split('.')[0]
+        return jrdb_utils.load_image(os.path.join(self.image_path, sequence, frame_num+'.jpg')) 
 
     def include_data(self, mode):
         if self.logger is not None:
@@ -151,7 +161,7 @@ class JrdbDataset(DatasetTemplate):
         except KeyError: 
             print("Label dict does not contain key combination (seq: {}, frame_num: {})".format(sequence, frame_num))
             print(label)
-        bbox_obj_list = [object3d_custom.Object3d(box, gt=True) for box in bbox_list]
+        bbox_obj_list = [object3d_jrdb.Object3d(box, gt=True) for box in bbox_list]
         return bbox_obj_list
 
     def get_lidar(self, index):        
@@ -167,15 +177,11 @@ class JrdbDataset(DatasetTemplate):
         assert os.path.exists(lidar_file_upper), 'Lidar file "{}" does not exist.'.format(lidar_file_upper)
         assert os.path.exists(lidar_file_lower), 'Lidar file "{}" does not exist.'.format(lidar_file_lower)
         
-        pts_upper = custom_data_utils.load_h5_basic(lidar_file_upper)
-        pts_upper_coor_base = jrdb_utils.transform_pts_upper_velodyne_to_base(np.array(pts_upper[:, 0:3], dtype=np.float32).T).T
-        pts_upper_base = np.hstack((pts_upper_coor_base, pts_upper[:,3, np.newaxis]))
-        
-        pts_lower = custom_data_utils.load_h5_basic(lidar_file_lower)
-        pts_lower_coor_base = jrdb_utils.transform_pts_lower_velodyne_to_base(np.array(pts_lower[:, 0:3], dtype=np.float32).T).T
-        pts_lower_base = np.hstack((pts_lower_coor_base, pts_lower[:,3, np.newaxis]))
-
-        pts_merged = np.concatenate((pts_upper_base, pts_lower_base), axis=0)
+        pts_upper = np.array(custom_data_utils.load_h5_basic(lidar_file_upper), dtype=np.float32)
+        pts_upper[:,:3] = jrdb_utils.transform_pts_upper_velodyne_to_base(pts_upper[:, 0:3].T).T
+        pts_lower = np.array(custom_data_utils.load_h5_basic(lidar_file_lower), dtype=np.float32)
+        pts_lower[:,:3] = jrdb_utils.transform_pts_lower_velodyne_to_base(pts_lower[:, 0:3].T).T
+        pts_merged = np.concatenate((pts_upper, pts_lower), axis=0)
         return pts_merged
 
     @staticmethod
@@ -284,15 +290,21 @@ class JrdbDataset(DatasetTemplate):
                 l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
                 # loc_lidar[:, 2] += h[:, 0] / 2
                 gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, rots[..., np.newaxis]], axis=1)
+                # print('Gt boxes lidar: {}'.format(np.mean(gt_boxes_lidar, axis=0)))
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
                 annotations['gt_boxes_camera'] = box_utils.boxes3d_lidar_to_cam_custom(gt_boxes_lidar)
-
-
+                # print('Gt boxes camera: {}'.format(np.mean(annotations['gt_boxes_camera'], axis=0)))
                 info['annos'] = annotations
 
                 if count_inside_pts:
                     points = self.get_lidar(sample_idx)
+                    # print('got_lidar')
+                    # image = self.get_image(sample_idx)
+                    # print('got_image')
                     corners_lidar = box_utils.boxes_to_corners_3d(gt_boxes_lidar, rot_mat_alt=self.dataset_cfg.ROT_MAT_ALT)
+                    # plot_utils.plot_dets_bev(points,  gt_boxes_lidar, frame=sample_idx, image=image, save_fig=True, extra_tag='sanity_check_')
+                    # print('plot_utils_2')
+
                     num_points_in_gt = -np.ones(num_gt, dtype=np.int32)
 
                     for k in range(num_objects):
@@ -315,15 +327,15 @@ class JrdbDataset(DatasetTemplate):
 
             database_save_path.mkdir(parents=True, exist_ok=True)
             all_db_infos = {}
-            print(info_path)
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
 
             for k in range(len(infos)):
+            # for k in range(1):
                 print('gt_database sample: %d/%d' % (k + 1, len(infos)))
                 info = infos[k]
                 sample_idx = info['point_cloud']['lidar_idx']
-                points = self.get_lidar(sample_idx)
+                points = np.array(self.get_lidar(sample_idx),dtype=np.float32)
                 annos = info['annos']
                 names = annos['name']
                 # bbox = annos['bbox']
@@ -335,14 +347,27 @@ class JrdbDataset(DatasetTemplate):
                 ).numpy()  # (nboxes, npoints)
 
                 for i in range(num_obj):
-                    filename = '%s_%s_%d.bin' % (sample_idx, names[i], i)
+                    # print('---------- Sample {}: object {}----------'.format(sample_idx, i))
+                    # filename = '%s_%s_%d.bin' % (sample_idx, names[i], i)
+                    filename = '%s_%s_%d.h5' % (sample_idx, names[i], i)
                     filepath = database_save_path / filename
                     gt_points = points[point_indices[i] > 0]
+                    # print('num_points_in_gt: {}'.format(gt_points.shape[0]))
 
-                    gt_points[:, :3] -= gt_boxes[i, :3]
-                    with open(filepath, 'w') as f:
-                        gt_points.tofile(f)
+                    gt_points[:, :3] -= gt_boxes[i, :3] # substract box center from filtered points within box
+                    # print(gt_points)
 
+                    if np.isinf(gt_points).any() or np.isnan(gt_points).any(): 
+                        import pdb 
+                        pdb.set_trace()
+
+                    if not gt_points.shape[0] == 0: 
+                        # print('Saving {} to {}'.format(gt_points.shape, filepath))
+                        custom_data_utils.save_h5_basic(filepath, gt_points)
+                        # with open(filepath, 'w') as f:
+                        #     gt_points.tofile(f)
+                    else: 
+                        continue
                     if (used_classes is None) or names[i] in used_classes:
                         db_path = str(filepath.relative_to(self.root_path))  # gt_database/xxxxx.bin
                         db_info = {'name': names[i], 'path': db_path, 'sample_idx': sample_idx, 'gt_idx': i,
@@ -378,12 +403,39 @@ class JrdbDataset(DatasetTemplate):
         from ..custom.eval import evaluate as custom_eval
         eval_det_annos = copy.deepcopy(det_annos)
         eval_gt_annos = [copy.deepcopy(info['annos']) for info in self.data_infos]
+
+        tp_mask_total = collections.defaultdict(list)
+        iou_thresholds = np.arange(0.3, 0.9, 0.05)
+        frames_no_dets = []
+
+        # calculate true positive mask for each frame and each iou threshold
+        for dt in eval_det_annos: 
+            frame_id = dt['frame_id']
+            gt_boxes = self.data_infos[frame_id]['annos']['gt_boxes_lidar']
+            dt_boxes = dt['boxes_lidar']
+            scores = dt['score']
+
+            if dt_boxes.shape[0] == 0: 
+                frames_no_dets.append(frame_id) 
+                continue    
+            # calculate overlaps for different iou thresholds 
+            # separate calculation since due to limited GPU memory
+            tp_mask = custom_eval.get_tp_mask_from_overlaps(dt_boxes, gt_boxes, iou_thresholds)
+            for iou, mask in tp_mask.items(): 
+                tp_mask_total[iou].append(mask)
+
+        # concatenate all true positive masks over all frame ids for all iou thresholds 
+        tp_mask_concat = {iou: np.concatenate(mask) for iou, mask in tp_mask_total.items()}
         gt_boxes = np.concatenate([gt['gt_boxes_lidar'] for gt in eval_gt_annos],0)
         dt_boxes = np.concatenate([dt['boxes_lidar'] for dt in eval_det_annos],0)
         scores = np.concatenate([dt['score'] for dt in eval_det_annos],0)
 
-        ap_result_str, ap_dict = custom_eval.get_results(dt_boxes, gt_boxes, scores, output_path)
-
+        ap_result_str, ap_dict = custom_eval.get_results_distributed(dt_boxes, gt_boxes, scores, tp_mask_concat, output_path)
+        print('Frames without detections: {}'.format(len(frames_no_dets)))
+        with open(f"{output_path}/../frames_without_dets.txt", "w") as output:
+            for frame in frames_no_dets:
+                s = " ".join(map(str, str(frame)))
+                output.write(s+'\n')
         return ap_result_str, ap_dict
 
 
@@ -443,6 +495,8 @@ if __name__ == '__main__':
         create_jrdb_infos(
             dataset_cfg=dataset_cfg,
             class_names=['Pedestrian'],
+            # data_path=ROOT_DIR / 'data' / 'jrdb_temp',
+            # save_path=ROOT_DIR / 'data' / 'jrdb_temp'
             data_path=ROOT_DIR / 'data' / 'jrdb',
             save_path=ROOT_DIR / 'data' / 'jrdb'
         )

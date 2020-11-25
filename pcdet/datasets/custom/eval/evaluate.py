@@ -4,24 +4,27 @@
 '''
 
 
-import numpy as np
 import argparse
-import sys
-import os
-import json
 import collections
-import torch 
+import json
+import os
+import sys
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from numba import jit
 from scipy.spatial.transform import Rotation
+
+from ....ops.iou3d_nms import iou3d_nms_utils
 from ....utils import box_utils, custom_data_utils
 from ...kitti.kitti_object_eval_python.eval import calculate_iou_partly
-from ....ops.iou3d_nms import iou3d_nms_utils
 
-
-# import lib.utils.iou3d.iou3d_utils as iou3d_utils
-# # from bbox3d import BBox3D
-# from tools.custom_eval.metrics import iou_3d
-import matplotlib.pyplot as plt
-from numba import jit
+COLORS = [
+        '#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c',
+        '#98df8a', '#d62728', '#ff9896', '#9467bd', '#c5b0d5',
+        '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f',
+        '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5']
 
 
 def get_AP(prec):
@@ -33,11 +36,6 @@ def get_AP(prec):
 def save_fig(fig, path, extension='.pdf'):
     save_dir = path + extension
     fig.savefig(save_dir, bbox_inches='tight')
-
-# def get_results(gt_annos, dt_annos, current_classes): 
-#     min_overlaps = np.arange(0.3, 0.9, 0.05) # iou thresholds 
-#     rets = calculate_iou_partly(dt_annos, gt_annos, 2, num_parts) # 3d IoU 
-#     overlaps, _, total_dt_num, total_gt_num = rets
 
 
 def plot_pr_curve_ax(
@@ -89,24 +87,90 @@ def compute_ap(tp_list, num_gt, num_pred):
     return AP, cum_precisions, cum_recalls, precision, recall
 
 
-def get_results(pred_boxes_np, gt_boxes_np, scores_np, save_path): 
-    """[summary]
+def get_tp_mask_from_overlaps(pred_boxes, gt_boxes, iou_thresholds): 
+    pred_boxes = torch.from_numpy(pred_boxes).contiguous().cuda(non_blocking=True).float()
+    gt_boxes = torch.from_numpy(gt_boxes).contiguous().cuda(non_blocking=True).float()
+    iou3d = iou3d_nms_utils.boxes_iou3d_gpu(pred_boxes, gt_boxes)  # (M, N)
+    max_iou, gt_ind  = torch.max(iou3d, dim=1) # max_overlaps, gt_assignment
+
+    mask_dict = {}
+    for iou in iou_thresholds: 
+        assigned_gt_box_idx = []
+        true_positive_mask = []
+        for el in zip(max_iou,gt_ind): 
+            if el[0].item() > iou and el[1].item() not in assigned_gt_box_idx: 
+                true_positive_mask.append(1.0)
+            else: 
+                true_positive_mask.append(0.0)
+            
+        true_positive_mask = (max_iou > iou).float().cpu().numpy()
+        mask_dict[iou] = true_positive_mask
+    return mask_dict
+        
+def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, save_path): 
+    """
+    Calculate results after having performed iou overlap calculation per 
+    frame separately. 
 
     Args:
         pred_boxes (numpy ndarrays)
         gt_boxes (numpy ndarrays)
         scores (numpy ndarrays)
     """
-
-    COLORS = [
-        '#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c',
-        '#98df8a', '#d62728', '#ff9896', '#9467bd', '#c5b0d5',
-        '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f',
-        '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5']
-
     ax = None
-    frame_no_dets = collections.defaultdict(list)	
-    iou_thresholds = np.arange(0.4, 0.9, 0.05)
+    AP_dict = {}
+    for i, (iou, tp_mask) in enumerate(tp_mask_dict.items()): 
+        no_dets_ct = 0 
+        iou = np.round(iou, decimals=2) 
+        preds = np.empty([0,10])
+        num_preds = pred_boxes.shape[0]
+        num_gt_boxes = gt_boxes.shape[0]
+
+        preds=np.hstack((pred_boxes, 
+                         scores_np.reshape(num_preds,-1), 
+                         tp_mask.reshape(num_preds,-1))) 
+        # sort all detections by score 
+        preds_final = preds[np.argsort(preds[:, 7])[::-1]]
+        AP, cum_precisions, cum_recalls, precision, recall = compute_ap(preds_final[:, 8], num_gt_boxes, num_preds)
+        AP_dict['AP@iou:{}'.format(iou)] = AP 
+        # print('Precision: {}\nRecall: {}'.format(precision, recall))
+        # print('Average Precision: {}'.format(AP))
+        legend = "IOU={}: AP={:.1%}, Recall={:05.4f}".format(iou, AP, recall)
+        ax = plot_pr_curve_ax(cum_precisions, cum_recalls, label=legend, color=COLORS[i], ax=ax)
+
+    plt.legend(loc='lower right', title='IOU Thresh', frameon=True, fontsize='medium')
+
+    for xval in np.linspace(0.0, 1.0, 11):
+        plt.vlines(xval, 0.0, 1.1, color='gray', alpha=0.3, linestyles='dashed')
+
+    #     fig_name = "PRCurve_val_" + config['name']
+    save_dir = save_path / '../plots'
+    save_dir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
+    filename= save_dir / 'pr_curve.pdf'
+    plt.savefig(filename, bbox_inches="tight")
+    plt.show()
+
+    result_str = '\n'
+    for iou, AP in AP_dict.items(): 
+        result_str += 'AP@IoU{}: {}\n'.format(iou, AP) 
+    return result_str, AP_dict
+
+
+def get_results(pred_boxes_np, gt_boxes_np, scores_np, save_path): 
+    """ 
+    Get results from all predicions and ground truth boxes over all frames. 
+    Warning: this function might lead to memory issues in GPU since iou3d 
+    overlap calculation is performed on the GPU. 
+
+    Args:
+        pred_boxes (numpy ndarrays)
+        gt_boxes (numpy ndarrays)
+        scores (numpy ndarrays)
+    """
+    ax = None
+    # frame_no_dets = collections.defaultdict(list)	
+    iou_thresholds = np.arange(0.3, 0.9, 0.05)
     pred_boxes = torch.from_numpy(pred_boxes_np).contiguous().cuda(non_blocking=True).float()
     gt_boxes = torch.from_numpy(gt_boxes_np).contiguous().cuda(non_blocking=True).float()
     scores = torch.from_numpy(scores_np).contiguous().cuda(non_blocking=True).float()
@@ -130,7 +194,7 @@ def get_results(pred_boxes_np, gt_boxes_np, scores_np, save_path):
         num_gt_boxes = gt_boxes_np.shape[0]
 
         if num_preds == 0: 
-            frame_no_dets["{}: {}".format(idx,frame)].append(iou)
+            # frame_no_dets["{}: {}".format(idx,frame)].append(iou)
             no_dets_ct +=1
             continue 
         
@@ -149,16 +213,17 @@ def get_results(pred_boxes_np, gt_boxes_np, scores_np, save_path):
 
         # convert to numpy arrays 
         pred_boxes_np = pred_boxes.cpu().numpy()
-        scores_np = scores[scores_idx].cpu().numpy()
+        # scores_np = scores[scores_idx].cpu().numpy()
+        scores_np = scores.cpu().numpy()
         preds=np.hstack((pred_boxes_np, 
                          scores_np.reshape(num_preds,-1), 
                          true_positive_mask.reshape(num_preds,-1), 
                          gt_ind.cpu().numpy().reshape(num_preds,-1)))
         
-        preds_final = preds[np.argsort(preds[:, 7])[::-1]]
         # sort all detections by score 
+        preds_final = preds[np.argsort(preds[:, 7])[::-1]]
         AP, cum_precisions, cum_recalls, precision, recall = compute_ap(preds_final[:, 8], num_gt_boxes, num_preds)
-        AP_dict[iou] = AP 
+        AP_dict['AP@iou:{}'.format(iou)] = AP 
         # print('Precision: {}\nRecall: {}'.format(precision, recall))
         # print('Average Precision: {}'.format(AP))
         legend = "IOU={}: AP={:.1%}, Recall={:05.4f}".format(iou, AP, recall)
