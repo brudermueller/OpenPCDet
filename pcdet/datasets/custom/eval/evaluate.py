@@ -33,6 +33,7 @@ def get_AP(prec):
         sums = sums + prec[..., i]
     return sums / 11 * 100
 
+
 def save_fig(fig, path, extension='.pdf'):
     save_dir = path + extension
     fig.savefig(save_dir, bbox_inches='tight')
@@ -57,7 +58,8 @@ def plot_pr_curve_ax(
     ax.set_ylim([0.0,1.1])
     return ax
 
-def compute_ap(tp_list, num_gt, num_pred):
+
+def compute_ap_aos(tp_list, ang_sim_list, num_gt, num_pred, eleven_pt_interolation=True):
 
     assert num_gt != 0
     assert num_pred != 0
@@ -65,49 +67,83 @@ def compute_ap(tp_list, num_gt, num_pred):
     # Compute precision and recall at each prediction box step
     cum_precisions = np.cumsum(tp_list) / (np.arange(num_pred) + 1)
     cum_recalls = np.cumsum(tp_list).astype(np.float32) / num_gt
+    cum_os = np.cumsum(ang_sim_list) / (np.arange(num_pred) + 1)
     
-    # Pad with start and end values to simplify the math
-    cum_precisions = np.concatenate([[0], cum_precisions, [0]])
-    cum_recalls = np.concatenate([[0], cum_recalls, [1]])
-
-    # Ensure precision values decrease but don't increase. This way, the
-    # precision value at each recall threshold is the maximum it can be
-    # for all following recall thresholds, as specified by the VOC paper.
-    for i in range(len(cum_precisions) - 2, -1, -1):
-        cum_precisions[i] = np.maximum(cum_precisions[i], cum_precisions[i + 1])
-
-    # Compute AP 
-    # to calculate area under PR curve, look for points
-    # where X axis (recall) changes value
-    indices = np.where(cum_recalls[:-1] != cum_recalls[1:])[0] + 1
-    AP = np.sum((cum_recalls[indices] - cum_recalls[indices - 1]) *
-                 cum_precisions[indices])
+    if eleven_pt_interolation: 
+        prec_at_rec = []
+        orient_sim_at_rec = []
+        for recall_level in np.linspace(0.0, 1.0, 11):
+            try:
+                args = np.argwhere(cum_recalls >= recall_level).flatten()
+                prec = np.max(cum_precisions[args])
+                orient_sim = np.max(ang_sim_list[args])
+            except ValueError:
+                prec = 0.0
+                orient_sim = 0.0
+            prec_at_rec.append(prec)
+            orient_sim_at_rec.append(orient_sim)
+        AP = np.mean(prec_at_rec)
+        AHS = np.mean(orient_sim_at_rec)
+    else: # interpolating all points
+        # Pad with start and end values to simplify the math
+        cum_precisions = np.concatenate([[0], cum_precisions, [0]])
+        cum_recalls = np.concatenate([[0], cum_recalls, [1]])
+        # Ensure precision values decrease but don't increase. This way, the
+        # precision value at each recall threshold is the maximum it can be
+        # for all following recall thresholds, as specified by the VOC paper.
+        for i in range(len(cum_precisions) - 2, -1, -1):
+            cum_precisions[i] = np.maximum(cum_precisions[i], cum_precisions[i + 1])
+            cum_os[i] = np.maximum(cum_os[i], cum_os[i + 1])
+        # Compute AP 
+        # to calculate area under PR curve, look for points
+        # where X axis (recall) changes value
+        indices = np.where(cum_recalls[:-1] != cum_recalls[1:])[0] + 1
+        AP = np.sum((cum_recalls[indices] - cum_recalls[indices - 1]) *
+                    cum_precisions[indices])
+        AHS = np.sum((cum_recalls[indices] - cum_recalls[indices - 1]) *
+                    cum_os[indices])
+                                 
     precision = tp / num_pred
     recall = tp / num_gt
-    return AP, cum_precisions, cum_recalls, precision, recall
+    return AP, AHS, cum_precisions, cum_recalls, precision, recall
 
 
 def get_tp_mask_from_overlaps(pred_boxes, gt_boxes, iou_thresholds): 
     pred_boxes = torch.from_numpy(pred_boxes).contiguous().cuda(non_blocking=True).float()
     gt_boxes = torch.from_numpy(gt_boxes).contiguous().cuda(non_blocking=True).float()
+    # calculate overlaps based on 3D iou
     iou3d = iou3d_nms_utils.boxes_iou3d_gpu(pred_boxes, gt_boxes)  # (M, N)
     max_iou, gt_ind  = torch.max(iou3d, dim=1) # max_overlaps, gt_assignment
 
-    mask_dict = {}
+    tp_mask_dict = {}
+    gt_ind_dict = {}
+
     for iou in iou_thresholds: 
         assigned_gt_box_idx = []
         true_positive_mask = []
-        for el in zip(max_iou,gt_ind): 
-            if el[0].item() > iou and el[1].item() not in assigned_gt_box_idx: 
-                true_positive_mask.append(1.0)
-            else: 
-                true_positive_mask.append(0.0)
-            
-        true_positive_mask = (max_iou > iou).float().cpu().numpy()
-        mask_dict[iou] = true_positive_mask
-    return mask_dict
+
+        true_positive_mask = 0.0 *  np.ones([pred_boxes.shape[0]])
+        assigned_box_dct = {} # mapping temporary chosen prediction idx to box idx 
+
+        # iterate through list of ground truth boxes 
+        for j in range(gt_boxes.shape[0]):
+            max_overlap = -100
+            # iterate through list of detections (M)
+            for i in range(pred_boxes.shape[0]): 
+                overlap_val = max_iou[i].item()
+                gt_idx = gt_ind[i].item()
+                if j == gt_idx and overlap_val > iou and overlap_val > max_overlap: 
+                    max_overlap = max_iou[i].item()
+                    true_positive_mask[i] = 1.0
+                    old_idx = assigned_box_dct.get(j, None)
+                    if old_idx: 
+                        true_positive_mask[old_idx] = 0.0
+                    assigned_box_dct[j] = i 
+
+        tp_mask_dict[iou] = true_positive_mask
+    return tp_mask_dict, gt_ind.cpu().numpy()
         
-def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, save_path): 
+def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, angular_similarity_dict, save_path): 
     """
     Calculate results after having performed iou overlap calculation per 
     frame separately. 
@@ -119,7 +155,10 @@ def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, save_
     """
     ax = None
     AP_dict = {}
+    AHS_dict = {}
     for i, (iou, tp_mask) in enumerate(tp_mask_dict.items()): 
+        print('----- IOU:{} -----'.format(iou))
+        ang_sim_list = angular_similarity_dict[iou]
         no_dets_ct = 0 
         iou = np.round(iou, decimals=2) 
         preds = np.empty([0,10])
@@ -128,11 +167,19 @@ def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, save_
 
         preds=np.hstack((pred_boxes, 
                          scores_np.reshape(num_preds,-1), 
+                         ang_sim_list.reshape(num_preds, -1),
                          tp_mask.reshape(num_preds,-1))) 
         # sort all detections by score 
-        preds_final = preds[np.argsort(preds[:, 7])[::-1]]
-        AP, cum_precisions, cum_recalls, precision, recall = compute_ap(preds_final[:, 8], num_gt_boxes, num_preds)
-        AP_dict['AP@iou:{}'.format(iou)] = AP 
+        sorted_scores_idx = np.argsort(scores_np)[::-1]
+        preds_final = preds[sorted_scores_idx]
+
+        AP, AHS, cum_precisions, cum_recalls, precision, recall = compute_ap_aos(
+            preds_final[:, -1], preds_final[:,-2],num_gt_boxes, num_preds)
+
+        print(f'AP: {AP}\nAHS: {AHS}')
+        AP_dict[iou] = AP 
+        AHS_dict[iou] = AHS
+
         # print('Precision: {}\nRecall: {}'.format(precision, recall))
         # print('Average Precision: {}'.format(AP))
         legend = "IOU={}: AP={:.1%}, Recall={:05.4f}".format(iou, AP, recall)
@@ -154,7 +201,9 @@ def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, save_
     result_str = '\n'
     for iou, AP in AP_dict.items(): 
         result_str += 'AP@IoU{}: {}\n'.format(iou, AP) 
-    return result_str, AP_dict
+    for iou, AHS in AHS_dict.items(): 
+        result_str += 'AHS@IoU{}: {}\n'.format(iou, AHS) 
+    return result_str, AP_dict, AHS_dict
 
 
 def get_results(pred_boxes_np, gt_boxes_np, scores_np, save_path): 
