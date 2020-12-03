@@ -32,8 +32,8 @@ def rotate_points_along_z(points, angle):
     zeros = angle.new_zeros(points.shape[0])
     ones = angle.new_ones(points.shape[0])
     rot_matrix = torch.stack((
-        cosa,  sina, zeros,
-        -sina, cosa, zeros,
+        cosa,  -sina, zeros,
+        sina, cosa, zeros,
         zeros, zeros, ones
     ), dim=1).view(-1, 3, 3).float()
     points_rot = torch.matmul(points[:, :, 0:3], rot_matrix)
@@ -99,10 +99,23 @@ def visualize_pts(pts, fig=None, bgcolor=(0, 0, 0), fgcolor=(1.0, 1.0, 1.0),
 
     if show_intensity:
         G = mlab.points3d(pts[:, 0], pts[:, 1], pts[:, 2], pts[:, 3], mode='point',
-                          colormap='gnuplot', scale_factor=1, figure=fig)
+                          colormap='gnuplot', scale_factor=0.25, figure=fig)
+        cb = mlab.colorbar(object=G, title=" Intensity values", orientation='vertical')
+        if bgcolor == (1.,1.,1.): 
+            cb.label_text_property.color = (0, 0, 0)
+            cb.title_text_property.color = (0, 0, 0)
+        cb.scalar_bar.unconstrained_font_size = True
+        cb.label_text_property.font_family = 'times'
+        cb.label_text_property.bold = False
+        cb.label_text_property.font_size=16
+        cb.title_text_property.font_family = 'times'
+        cb.title_text_property.font_size = 18
+        cb.title_text_property.italic = False
+
     else:
         G = mlab.points3d(pts[:, 0], pts[:, 1], pts[:, 2], mode='point',
                           colormap='gnuplot', scale_factor=1, figure=fig)
+    G.glyph.scale_mode = 'scale_by_vector'
     if draw_origin:
         mlab.points3d(0, 0, 0, color=(1, 1, 1), mode='cube', scale_factor=0.2)
         mlab.plot3d([0, 1.0], [0, 0], [0, 0], color=(1, 0, 0), tube_radius=0.025)
@@ -160,7 +173,7 @@ def draw_multi_grid_range(fig, grid_size=5, bv_range=(-60, -60, 60, 60)):
     return fig
 
 
-def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_scores=None, ref_labels=None):
+def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_scores=None, ref_labels=None, show_intensity=True, bgcolor=(0.,0.,0.)):
     if not isinstance(points, np.ndarray):
         points = points.cpu().numpy()
     if ref_boxes is not None and not isinstance(ref_boxes, np.ndarray):
@@ -172,7 +185,7 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_scores=None, ref_labe
     if ref_labels is not None and not isinstance(ref_labels, np.ndarray):
         ref_labels = ref_labels.cpu().numpy()
 
-    fig = visualize_pts(points, bgcolor=(0.,0.,0.), show_intensity=True, size=(1000, 600))
+    fig = visualize_pts(points, bgcolor=bgcolor, show_intensity=show_intensity, size=(1000, 600))
     # fig = draw_multi_grid_range(fig, bv_range=(-5, -20, 40, 20))
     if gt_boxes is not None:
         corners3d = boxes_to_corners_3d(gt_boxes)
