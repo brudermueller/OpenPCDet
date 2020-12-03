@@ -13,6 +13,7 @@ from sklearn.model_selection import train_test_split
 parser = argparse.ArgumentParser(description="arg parser")
 parser.add_argument('--split', type=str, required=True, help='Indicate if train or test split')
 parser.add_argument('--official', action='store_true', default=False, help='if True, it will take the recommended val/train split from the development kit readme file ')
+parser.add_argument('--indoor_only', action='store_true', default=False, help='Only take indoor scenes of JRDB')
 args = parser.parse_args()
 
 DATA_DIR = '/hdd/master_lara_data/JRDB/cvgl/group/jrdb/data/'
@@ -26,8 +27,21 @@ _JRDB_VAL_SEQUENCES = [
     'tressider-2019-04-26_2'
 ]
 
+_JRDB_OUTDOOR_SCENES = [
+    'clark-center-2019-02-28_0',
+    'clark-center-2019-02-28_1',
+    'clark-center-intersection-2019-02-28_0',
+    'gates-to-clark-2019-02-28_1',
+    'hewlett-packard-intersection-2019-01-24_0',
+    'huang-lane-2019-02-12_0',
+    'memorial-court-2019-03-16_0', 
+    'meyer-green-2019-03-16_0', 
+    'tressider-2019-03-16_0', 
+    'tressider-2019-03-16_1'
+]
 
-def get_data_files(split):
+
+def get_data_files(split, indoor_only=False):
     """ Walk through given directory and corresponding subdirectories to generate a text file 
         with all training/testing instances in a list, like it has been done for the KITTI dataset.
 
@@ -47,7 +61,14 @@ def get_data_files(split):
             if 'upper' in str(i): # take list from upper velodyne and fuse pointclouds with lower velodyne later 
                 temp = [x.start() for x in re.finditer('/', str(i))]
                 part_file_name = str(i)[temp[7]:] # get relevant chain of subdirectories
-                data_files += [part_file_name]
+
+                if indoor_only: 
+                    if not any(s in part_file_name for s in _JRDB_OUTDOOR_SCENES): 
+                        data_files += [part_file_name]
+                    else:
+                        continue
+                else: 
+                    data_files += [part_file_name]
     return data_files
 
 
@@ -84,7 +105,7 @@ def save_to_file(split, frames):
 
 if __name__=='__main__':
 
-    frames = get_data_files(args.split)
+    frames = get_data_files(args.split, args.indoor_only)
     if args.split == 'train': 
         dataset = train_val_split(frames, args.official)
         save_to_file('val', dataset['val'])

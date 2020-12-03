@@ -1,4 +1,6 @@
 import numpy as np
+import cv2
+import os
 
 """
 Transformations. Following frames are defined:
@@ -12,8 +14,8 @@ laser: x-forward, y-left, z-up
 
 def _get_R_z(rot_z):
     cs, ss = np.cos(rot_z), np.sin(rot_z)
-    # return np.array([[cs, -ss, 0], [ss, cs, 0], [0, 0, 1]], dtype=np.float32)
     return np.array([[cs, -ss, 0], [ss, cs, 0], [0, 0, 1]], dtype=np.float32)
+    # return np.array([[cs, ss, 0], [-ss, cs, 0], [0, 0, 1]], dtype=np.float32)
 
 
 # laser to base
@@ -54,7 +56,9 @@ def transform_pts_upper_velodyne_to_base(pts):
     Returns:
         pts_trans (np.array[3, N])
     """
-    return _R_upper_lidar_to_base @ pts + _T_upper_lidar_to_base
+    trans_pts =_R_upper_lidar_to_base @ pts + _T_upper_lidar_to_base
+    # print(np.mean(pts, axis=1) - np.mean(trans_pts, axis=1))
+    return trans_pts
 
 
 def transform_pts_lower_velodyne_to_base(pts):
@@ -124,3 +128,16 @@ def transform_pts_base_to_stitched_im(pts):
 def transform_pts_laser_to_stitched_im(pts):
     pts_base = transform_pts_laser_to_base(pts)
     return transform_pts_base_to_stitched_im(pts_base)
+
+
+def load_image(file):
+    """Load an image given file url.
+
+    Returns:
+        im (np.ndarray[H, W, 3]): (H, W) = (480, 3760) for stitched image,
+            (480, 752) for individual image
+    """
+    assert os.path.exists(file)
+    im = cv2.imread(file, cv2.IMREAD_COLOR)
+    im = cv2.cvtColor(im, cv2.COLOR_RGB2BGR)
+    return im

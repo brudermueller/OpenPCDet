@@ -405,6 +405,7 @@ class JrdbDataset(DatasetTemplate):
         eval_gt_annos = [copy.deepcopy(info['annos']) for info in self.data_infos]
 
         tp_mask_total = collections.defaultdict(list)
+        angular_similarity_iou = collections.defaultdict(list)
         iou_thresholds = np.arange(0.3, 0.9, 0.05)
         frames_no_dets = []
 
@@ -414,29 +415,38 @@ class JrdbDataset(DatasetTemplate):
             gt_boxes = self.data_infos[frame_id]['annos']['gt_boxes_lidar']
             dt_boxes = dt['boxes_lidar']
             scores = dt['score']
+            num_dets = dt_boxes.shape[0]
 
-            if dt_boxes.shape[0] == 0: 
+            if num_dets == 0: 
                 frames_no_dets.append(frame_id) 
                 continue    
             # calculate overlaps for different iou thresholds 
-            # separate calculation since due to limited GPU memory
-            tp_mask = custom_eval.get_tp_mask_from_overlaps(dt_boxes, gt_boxes, iou_thresholds)
+            # separate calculation due to limited GPU memory
+            tp_mask, gt_indices = custom_eval.get_tp_mask_from_overlaps(dt_boxes, gt_boxes, iou_thresholds)
             for iou, mask in tp_mask.items(): 
                 tp_mask_total[iou].append(mask)
+                # calculate similarity measure from gt_indices 
+                angular_similarity_list = []
+                for i in range(dt_boxes.shape[0]):
+                    angular_similarity_list.append((1+ np.cos(dt_boxes[i, 6] - gt_boxes[gt_indices[i],6])) * mask[i])
+                angular_similarity_iou[iou].append(angular_similarity_list)
 
         # concatenate all true positive masks over all frame ids for all iou thresholds 
         tp_mask_concat = {iou: np.concatenate(mask) for iou, mask in tp_mask_total.items()}
+        angular_dict_concat =  {iou: np.concatenate(ang_sim) for iou, ang_sim in angular_similarity_iou.items()}
         gt_boxes = np.concatenate([gt['gt_boxes_lidar'] for gt in eval_gt_annos],0)
         dt_boxes = np.concatenate([dt['boxes_lidar'] for dt in eval_det_annos],0)
         scores = np.concatenate([dt['score'] for dt in eval_det_annos],0)
 
-        ap_result_str, ap_dict = custom_eval.get_results_distributed(dt_boxes, gt_boxes, scores, tp_mask_concat, output_path)
+        result_str, ap_dict, ahs_dict = custom_eval.get_results_distributed(
+            dt_boxes, gt_boxes, scores, tp_mask_concat, angular_dict_concat, output_path)
+
         print('Frames without detections: {}'.format(len(frames_no_dets)))
         with open(f"{output_path}/../frames_without_dets.txt", "w") as output:
             for frame in frames_no_dets:
                 s = " ".join(map(str, str(frame)))
                 output.write(s+'\n')
-        return ap_result_str, ap_dict
+        return result_str, ap_dict
 
 
 def create_jrdb_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
@@ -487,7 +497,6 @@ if __name__ == '__main__':
     import sys
     if sys.argv.__len__() > 1 and sys.argv[1] == 'create_jrdb_infos':
         from pathlib import Path
-
         import yaml
         from easydict import EasyDict
         dataset_cfg = EasyDict(yaml.load(open(sys.argv[2])))
@@ -497,6 +506,6 @@ if __name__ == '__main__':
             class_names=['Pedestrian'],
             # data_path=ROOT_DIR / 'data' / 'jrdb_temp',
             # save_path=ROOT_DIR / 'data' / 'jrdb_temp'
-            data_path=ROOT_DIR / 'data' / 'jrdb',
-            save_path=ROOT_DIR / 'data' / 'jrdb'
+            data_path=ROOT_DIR / 'data' / 'jrdb_indoor',
+            save_path=ROOT_DIR / 'data' / 'jrdb_indoor'
         )
