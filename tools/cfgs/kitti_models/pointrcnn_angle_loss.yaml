@@ -1,9 +1,7 @@
 CLASS_NAMES: ['Pedestrian']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_indoor.yaml
-    # _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_all_aug.yaml #custom_dataset.yaml
-    # _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_no_aug.yaml #custom_dataset.yaml
+    _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset.yaml #custom_dataset.yaml
     _BOX_ENC_DEFAULT: True # affects the style of how the corners are encoded 
     _ROT_MAT_ALT: True # if True the minus sign of the yaw rotation matrix of the sinus is in the second column instead of the first
 
@@ -110,6 +108,9 @@ MODEL:
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
+            BOX_CODER_CONFIG: {
+                'encode_angle_by_sincos': True
+            }
             ROI_PER_IMAGE: 128
             # for subsampling of proposals -> ROI_PER_IMG * FG_RATIO
             FG_RATIO: 0.7 # 0.5
@@ -134,7 +135,8 @@ MODEL:
                 'rcnn_cls_weight': 1.0,
                 'rcnn_reg_weight': 1.0,
                 'rcnn_corner_weight': 1.0,
-                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+                # 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5]
             }
 
     POST_PROCESSING:

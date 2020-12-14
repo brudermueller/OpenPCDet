@@ -1,9 +1,7 @@
 CLASS_NAMES: ['Pedestrian']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_indoor.yaml
-    # _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_all_aug.yaml #custom_dataset.yaml
-    # _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_no_aug.yaml #custom_dataset.yaml
+    _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset.yaml #custom_dataset.yaml
     _BOX_ENC_DEFAULT: True # affects the style of how the corners are encoded 
     _ROT_MAT_ALT: True # if True the minus sign of the yaw rotation matrix of the sinus is in the second column instead of the first
 
@@ -111,20 +109,29 @@ MODEL:
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
             ROI_PER_IMAGE: 128
-            # for subsampling of proposals -> ROI_PER_IMG * FG_RATIO
-            FG_RATIO: 0.7 # 0.5
+            FG_RATIO: 0.5
 
             SAMPLE_ROI_BY_EACH_CLASS: True
-            CLS_SCORE_TYPE: cls
+            CLS_SCORE_TYPE: roi_iou
 
-            CLS_FG_THRESH: 0.35 #0.5 # 0.6
-            # should be smaller than both FG_THRESHES 
-            CLS_BG_THRESH: 0.1 #0.3 #0.35 #0.45
-            CLS_BG_THRESH_LO: 0.05 # 0.1
-            HARD_BG_RATIO: 0.7 #0.8
+            CLS_FG_THRESH: 0.5
+            CLS_BG_THRESH: 0.25
+            CLS_BG_THRESH_LO: 0.1
+            HARD_BG_RATIO: 0.8
 
-             # 3D IOU threshold as of then to accept box proposal 
-            REG_FG_THRESH: 0.3 #0.3 #0.55  
+            REG_FG_THRESH: 0.45
+            # CLS_FG_THRESH: 0.7
+            # CLS_BG_THRESH: 0.25
+            # CLS_BG_THRESH_LO: 0.1
+            # HARD_BG_RATIO: 0.8
+
+            # REG_FG_THRESH: 0.55
+            # CLS_FG_THRESH: 0.4 #0.5
+            # CLS_BG_THRESH: 0.25
+            # CLS_BG_THRESH_LO: 0.05 #0.1
+            # HARD_BG_RATIO: 0.7 #0.8
+
+            # REG_FG_THRESH: 0.2 #0.45
 
         LOSS_CONFIG:
             CLS_LOSS: BinaryCrossEntropy
@@ -154,7 +161,7 @@ MODEL:
 
 OPTIMIZATION:
     BATCH_SIZE_PER_GPU: 3
-    NUM_EPOCHS: 30 #80
+    NUM_EPOCHS: 80 #80
 
     OPTIMIZER: adam_onecycle
     LR: 0.01 # maximum learning rate 

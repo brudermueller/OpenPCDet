@@ -1,9 +1,7 @@
 CLASS_NAMES: ['Pedestrian']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_indoor.yaml
-    # _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_all_aug.yaml #custom_dataset.yaml
-    # _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_no_aug.yaml #custom_dataset.yaml
+    _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset.yaml #custom_dataset.yaml
     _BOX_ENC_DEFAULT: True # affects the style of how the corners are encoded 
     _ROT_MAT_ALT: True # if True the minus sign of the yaw rotation matrix of the sinus is in the second column instead of the first
 

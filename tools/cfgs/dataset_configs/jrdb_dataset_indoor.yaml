@@ -1,5 +1,5 @@
 DATASET: 'JrdbDataset'
-DATA_PATH: '../data/jrdb'
+DATA_PATH: '../data/jrdb_indoor'
 DATA_ROOT: '/hdd/master_lara_data/JRDB/cvgl/group/jrdb/data'
 
 #TODO: adapt pointcloud range 
@@ -8,19 +8,22 @@ ROT_MAT_ALT: True
 
 DATA_SPLIT: {
     'train': train,
-    'test': val
+    # 'test': val
+    'test': train
+
 }
 
 INFO_PATH: {
     'train': [jrdb_infos_train.pkl],
-    'test': [jrdb_infos_val.pkl],
+    # 'test': [jrdb_infos_val.pkl],
+    'test': [jrdb_infos_train.pkl],
 }
 
 FOV_POINTS_ONLY: False
 
 
 DATA_AUGMENTOR:
-    DISABLE_AUG_LIST: ['gt_sampling']  #['placeholder'] #['gt_sampling', 'random_world_flip', 'random_world_rotation','random_world_scaling']  
+    DISABLE_AUG_LIST: ['gt_sampling'] # ['gt_sampling', 'random_world_flip', 'random_world_rotation','random_world_scaling'] 
     AUG_CONFIG_LIST:
         - NAME: gt_sampling
           USE_ROAD_PLANE: False

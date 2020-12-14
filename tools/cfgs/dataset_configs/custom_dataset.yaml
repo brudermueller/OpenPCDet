@@ -1,31 +1,32 @@
-DATASET: 'JrdbDataset'
-DATA_PATH: '../data/jrdb'
-DATA_ROOT: '/hdd/master_lara_data/JRDB/cvgl/group/jrdb/data'
+DATASET: 'CustomDataset'
+DATA_PATH: '../data/custom_data'
 
-#TODO: adapt pointcloud range 
-POINT_CLOUD_RANGE: [-40, -70, -2, 20, 50, 3] 
-ROT_MAT_ALT: True
+POINT_CLOUD_RANGE: [-10, -40, -1, 50, 40, 3] # [0, -40, -3, 70.4, 40, 1]
 
 DATA_SPLIT: {
     'train': train,
+    # 'test': test_crowd_02 #val
     'test': val
+
 }
 
 INFO_PATH: {
-    'train': [jrdb_infos_train.pkl],
-    'test': [jrdb_infos_val.pkl],
+    'train': [custom_infos_train.pkl],
+    'test': [custom_infos_val.pkl]
+    # 'test': [custom_infos_test_crowd_02.pkl],
+
 }
 
 FOV_POINTS_ONLY: False
 
 
 DATA_AUGMENTOR:
-    DISABLE_AUG_LIST: ['gt_sampling']  #['placeholder'] #['gt_sampling', 'random_world_flip', 'random_world_rotation','random_world_scaling']  
+    DISABLE_AUG_LIST: ['placeholder']
     AUG_CONFIG_LIST:
         - NAME: gt_sampling
           USE_ROAD_PLANE: False
           DB_INFO_PATH:
-              - jrdb_dbinfos_train.pkl
+              - custom_dbinfos_train.pkl
           PREPARE: {
              filter_by_min_points: ['Car:5', 'Pedestrian:5', 'Cyclist:5'],
              filter_by_difficulty: [-1],
@@ -38,11 +39,11 @@ DATA_AUGMENTOR:
           LIMIT_WHOLE_SCENE: True
 
         - NAME: random_world_flip
-          ALONG_AXIS_LIST: ['x'] #['x', 'y']
+          ALONG_AXIS_LIST: ['x', 'y'] #['x']
 
         - NAME: random_world_rotation
           WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
-          ROT_MAT_ALT: True
+          ROT_MAT_ALT: False
 
         - NAME: random_world_scaling
           WORLD_SCALE_RANGE: [0.95, 1.05]
@@ -52,15 +53,13 @@ POINT_FEATURE_ENCODING: {
     encoding_type: absolute_coordinates_encoding,
     used_feature_list: ['x', 'y', 'z', 'intensity'],
     src_feature_list: ['x', 'y', 'z', 'intensity'],
-    scale_intensity: True, 
 }
 
 
 DATA_PROCESSOR:
     - NAME: mask_points_and_boxes_outside_range
       REMOVE_OUTSIDE_BOXES: False 
-      BOX_ENC_DEFAULT: True 
-      ROT_MAT_ALT: True
+      BOX_ENC_DEFAULT: False 
 
     - NAME: shuffle_points
       SHUFFLE_ENABLED: {

@@ -1,9 +1,7 @@
 CLASS_NAMES: ['Pedestrian']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_indoor.yaml
-    # _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_all_aug.yaml #custom_dataset.yaml
-    # _BASE_CONFIG_: cfgs/dataset_configs/jrdb_dataset_no_aug.yaml #custom_dataset.yaml
+    _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
     _BOX_ENC_DEFAULT: True # affects the style of how the corners are encoded 
     _ROT_MAT_ALT: True # if True the minus sign of the yaw rotation matrix of the sinus is in the second column instead of the first
 
@@ -111,20 +109,17 @@ MODEL:
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
             ROI_PER_IMAGE: 128
-            # for subsampling of proposals -> ROI_PER_IMG * FG_RATIO
-            FG_RATIO: 0.7 # 0.5
+            FG_RATIO: 0.5
 
             SAMPLE_ROI_BY_EACH_CLASS: True
             CLS_SCORE_TYPE: cls
 
-            CLS_FG_THRESH: 0.35 #0.5 # 0.6
-            # should be smaller than both FG_THRESHES 
-            CLS_BG_THRESH: 0.1 #0.3 #0.35 #0.45
+            CLS_FG_THRESH: 0.4 #0.5 # 0.6
+            CLS_BG_THRESH: 0.35 #0.45
             CLS_BG_THRESH_LO: 0.05 # 0.1
-            HARD_BG_RATIO: 0.7 #0.8
+            HARD_BG_RATIO: 0.8
 
-             # 3D IOU threshold as of then to accept box proposal 
-            REG_FG_THRESH: 0.3 #0.3 #0.55  
+            REG_FG_THRESH: 0.2 #0.3 #0.55
 
         LOSS_CONFIG:
             CLS_LOSS: BinaryCrossEntropy
@@ -154,16 +149,16 @@ MODEL:
 
 OPTIMIZATION:
     BATCH_SIZE_PER_GPU: 3
-    NUM_EPOCHS: 30 #80
+    NUM_EPOCHS: 80 #80
 
     OPTIMIZER: adam_onecycle
-    LR: 0.01 # maximum learning rate 
+    LR: 0.01
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 
     MOMS: [0.95, 0.85]
-    PCT_START: 0.4 # percentage of total # epochs when lr rises during one cycle 
-    DIV_FACTOR: 100 #10 # division factor -> min_lr = max_lr/div_factor
+    PCT_START: 0.4
+    DIV_FACTOR: 10
     DECAY_STEP_LIST: [35, 45]
     LR_DECAY: 0.1
     LR_CLIP: 0.0000001

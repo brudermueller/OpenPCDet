@@ -1,7 +1,9 @@
 DATASET: 'KittiDataset'
 DATA_PATH: '../data/kitti'
+DATA_ROOT: '/hdd/master_lara_data/KITTI/object'
 
 POINT_CLOUD_RANGE: [0, -40, -3, 70.4, 40, 1]
+ROT_MAT_ALT: False
 
 DATA_SPLIT: {
     'train': train,
@@ -56,6 +58,7 @@ DATA_PROCESSOR:
     - NAME: mask_points_and_boxes_outside_range
       REMOVE_OUTSIDE_BOXES: True
       BOX_ENC_DEFAULT: True
+      ROT_MAT_ALT: False
 
     - NAME: shuffle_points
       SHUFFLE_ENABLED: {
