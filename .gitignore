@@ -7,7 +7,7 @@ data/
 venv/
 *.idea/
 *.so
-*.yaml
+# *.yaml
 *.sh 
 *.pth
 *.pkl
@@ -15,3 +15,5 @@ venv/
 *.bin
 /output
 /plots
+*.txt
+.vscode
