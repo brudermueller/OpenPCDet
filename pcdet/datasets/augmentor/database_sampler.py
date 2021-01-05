@@ -1,9 +1,10 @@
 import pickle
 
 import numpy as np
+import os 
 
 from ...ops.iou3d_nms import iou3d_nms_utils
-from ...utils import box_utils
+from ...utils import box_utils, plot_utils, custom_data_utils
 
 
 class DataBaseSampler(object):
@@ -130,10 +131,12 @@ class DataBaseSampler(object):
         obj_points_list = []
         for idx, info in enumerate(total_valid_sampled_dict):
             file_path = self.root_path / info['path']
-            obj_points = np.fromfile(str(file_path), dtype=np.float32).reshape(
-                [-1, self.sampler_cfg.NUM_POINT_FEATURES])
-
-            obj_points[:, :3] += info['box3d_lidar'][:3]
+            try: 
+                assert os.path.exists(file_path)
+                obj_points = custom_data_utils.load_h5_basic(file_path).reshape([-1, self.sampler_cfg.NUM_POINT_FEATURES])
+                obj_points[:, :3] += info['box3d_lidar'][:3]
+            except AssertionError as e: 
+                continue
 
             if self.sampler_cfg.get('USE_ROAD_PLANE', False):
                 # mv height
@@ -181,6 +184,7 @@ class DataBaseSampler(object):
                 if self.sampler_cfg.get('DATABASE_WITH_FAKELIDAR', False):
                     sampled_boxes = box_utils.boxes3d_kitti_fakelidar_to_lidar(sampled_boxes)
 
+                # check added that samples do not overlap with ground truth and themselves 
                 iou1 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], existed_boxes[:, 0:7])
                 iou2 = iou3d_nms_utils.boxes_bev_iou_cpu(sampled_boxes[:, 0:7], sampled_boxes[:, 0:7])
                 iou2[range(sampled_boxes.shape[0]), range(sampled_boxes.shape[0])] = 0
@@ -188,13 +192,11 @@ class DataBaseSampler(object):
                 valid_mask = ((iou1.max(axis=1) + iou2.max(axis=1)) == 0).nonzero()[0]
                 valid_sampled_dict = [sampled_dict[x] for x in valid_mask]
                 valid_sampled_boxes = sampled_boxes[valid_mask]
-
                 existed_boxes = np.concatenate((existed_boxes, valid_sampled_boxes), axis=0)
                 total_valid_sampled_dict.extend(valid_sampled_dict)
 
         sampled_gt_boxes = existed_boxes[gt_boxes.shape[0]:, :]
         if total_valid_sampled_dict.__len__() > 0:
             data_dict = self.add_sampled_boxes_to_scene(data_dict, sampled_gt_boxes, total_valid_sampled_dict)
-
         data_dict.pop('gt_boxes_mask')
         return data_dict

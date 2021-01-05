@@ -55,7 +55,7 @@ def rotate_points_along_z(points, angle, rot_mat_alt=False):
         ), dim=1).view(-1, 3, 3).float()
     else: 
         rot_matrix = torch.stack((
-            cosa,  -sina, zeros,
+            cosa, -sina, zeros,
             sina, cosa, zeros,
             zeros, zeros, ones
         ), dim=1).view(-1, 3, 3).float()
