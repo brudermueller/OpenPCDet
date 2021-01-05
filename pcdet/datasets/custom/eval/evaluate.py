@@ -9,9 +9,11 @@ import collections
 import json
 import os
 import sys
+import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numba 
 import torch
 from numba import jit
 from scipy.spatial.transform import Rotation
@@ -76,7 +78,7 @@ def compute_ap_aos(tp_list, ang_sim_list, num_gt, num_pred, eleven_pt_interolati
             try:
                 args = np.argwhere(cum_recalls >= recall_level).flatten()
                 prec = np.max(cum_precisions[args])
-                orient_sim = np.max(ang_sim_list[args])
+                orient_sim = np.max(cum_os[args])
             except ValueError:
                 prec = 0.0
                 orient_sim = 0.0
@@ -108,6 +110,7 @@ def compute_ap_aos(tp_list, ang_sim_list, num_gt, num_pred, eleven_pt_interolati
     return AP, AHS, cum_precisions, cum_recalls, precision, recall
 
 
+# @numba.jit
 def get_tp_mask_from_overlaps(pred_boxes, gt_boxes, iou_thresholds): 
     pred_boxes = torch.from_numpy(pred_boxes).contiguous().cuda(non_blocking=True).float()
     gt_boxes = torch.from_numpy(gt_boxes).contiguous().cuda(non_blocking=True).float()
@@ -116,12 +119,8 @@ def get_tp_mask_from_overlaps(pred_boxes, gt_boxes, iou_thresholds):
     max_iou, gt_ind  = torch.max(iou3d, dim=1) # max_overlaps, gt_assignment
 
     tp_mask_dict = {}
-    gt_ind_dict = {}
 
     for iou in iou_thresholds: 
-        assigned_gt_box_idx = []
-        true_positive_mask = []
-
         true_positive_mask = 0.0 *  np.ones([pred_boxes.shape[0]])
         assigned_box_dct = {} # mapping temporary chosen prediction idx to box idx 
 
@@ -142,7 +141,8 @@ def get_tp_mask_from_overlaps(pred_boxes, gt_boxes, iou_thresholds):
 
         tp_mask_dict[iou] = true_positive_mask
     return tp_mask_dict, gt_ind.cpu().numpy()
-        
+
+# @numba.jit     
 def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, angular_similarity_dict, save_path): 
     """
     Calculate results after having performed iou overlap calculation per 
@@ -154,10 +154,10 @@ def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, angul
         scores (numpy ndarrays)
     """
     ax = None
-    AP_dict = {}
-    AHS_dict = {}
+    result_dict = {}
+    precision_recall_dict = {}
+    result_str = '\n'
     for i, (iou, tp_mask) in enumerate(tp_mask_dict.items()): 
-        print('----- IOU:{} -----'.format(iou))
         ang_sim_list = angular_similarity_dict[iou]
         no_dets_ct = 0 
         iou = np.round(iou, decimals=2) 
@@ -176,13 +176,17 @@ def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, angul
         AP, AHS, cum_precisions, cum_recalls, precision, recall = compute_ap_aos(
             preds_final[:, -1], preds_final[:,-2],num_gt_boxes, num_preds)
 
-        print(f'AP: {AP}\nAHS: {AHS}')
-        AP_dict[iou] = AP 
-        AHS_dict[iou] = AHS
+        result_str += 'AP@IoU{}: {:.3f}\n'.format(iou, AP) 
+        result_str += 'AHS@IoU{}: {:.3f}\n\n'.format(iou, AHS) 
+
+        result_dict['AP@iou_{}'.format(iou)] = AP 
+        result_dict['AHS@iou_{}'.format(iou)] = AHS
 
         # print('Precision: {}\nRecall: {}'.format(precision, recall))
         # print('Average Precision: {}'.format(AP))
         legend = "IOU={}: AP={:.1%}, Recall={:05.4f}".format(iou, AP, recall)
+
+        precision_recall_dict[iou] = {'prec': cum_precisions, 'rec': cum_recalls}
         ax = plot_pr_curve_ax(cum_precisions, cum_recalls, label=legend, color=COLORS[i], ax=ax)
 
     plt.legend(loc='lower right', title='IOU Thresh', frameon=True, fontsize='medium')
@@ -197,13 +201,12 @@ def get_results_distributed(pred_boxes, gt_boxes, scores_np, tp_mask_dict, angul
     filename= save_dir / 'pr_curve.pdf'
     plt.savefig(filename, bbox_inches="tight")
     plt.show()
+    save_file = save_path / 'pr_results.pkl'
+    
+    with open(save_file, 'wb') as f:
+        pickle.dump(precision_recall_dict, f)
 
-    result_str = '\n'
-    for iou, AP in AP_dict.items(): 
-        result_str += 'AP@IoU{}: {}\n'.format(iou, AP) 
-    for iou, AHS in AHS_dict.items(): 
-        result_str += 'AHS@IoU{}: {}\n'.format(iou, AHS) 
-    return result_str, AP_dict, AHS_dict
+    return result_str, result_dict
 
 
 def get_results(pred_boxes_np, gt_boxes_np, scores_np, save_path): 
@@ -296,3 +299,230 @@ def get_results(pred_boxes_np, gt_boxes_np, scores_np, save_path):
     for iou, AP in AP_dict.items(): 
         result_str += 'AP@IoU{}: {}\n'.format(iou, AP) 
     return result_str, AP_dict
+
+
+
+@numba.jit
+def get_thresholds(scores: np.ndarray, num_gt, num_sample_pts=41):
+    scores.sort()
+    scores = scores[::-1]
+    current_recall = 0
+    thresholds = []
+    for i, score in enumerate(scores):
+        l_recall = (i + 1) / num_gt
+        if i < (len(scores) - 1):
+            r_recall = (i + 2) / num_gt
+        else:
+            r_recall = l_recall
+        if (((r_recall - current_recall) < (current_recall - l_recall))
+                and (i < (len(scores) - 1))):
+            continue
+        # recall = l_recall
+        thresholds.append(score)
+        current_recall += 1 / (num_sample_pts - 1.0)
+    return thresholds
+
+
+@numba.jit(nopython=True)
+def compute_statistics_jit(overlaps,
+                           gt_datas,
+                           dt_datas,
+                           dt_scores,
+                           ignored_gt,
+                           ignored_det,
+                           metric,
+                           min_overlap,
+                           thresh=0,
+                           compute_fp=False,
+                           compute_aos=False):
+
+    det_size = dt_datas.shape[0]
+    gt_size = gt_datas.shape[0]
+
+    assigned_detection = [False] * det_size
+    ignored_threshold = [False] * det_size
+    if compute_fp:
+        for i in range(det_size):
+            if (dt_scores[i] < thresh):
+                ignored_threshold[i] = True
+
+    NO_DETECTION = -10000000
+    tp, fp, fn, similarity = 0, 0, 0, 0
+
+    thresholds = np.zeros((gt_size, ))
+    thresh_idx = 0
+    delta = np.zeros((gt_size, ))
+    delta_idx = 0
+    for i in range(gt_size):
+        if ignored_gt[i] == -1:
+            continue
+        det_idx = -1
+        valid_detection = NO_DETECTION
+        max_overlap = 0
+        assigned_ignored_det = False
+
+        for j in range(det_size):
+            if (ignored_det[j] == -1):
+                continue
+            if (assigned_detection[j]):
+                continue
+            if (ignored_threshold[j]):
+                continue
+            overlap = overlaps[j, i]
+            dt_score = dt_scores[j]
+            if (not compute_fp and (overlap > min_overlap)
+                    and dt_score > valid_detection):
+                det_idx = j
+                valid_detection = dt_score
+            elif (compute_fp and (overlap > min_overlap)
+                  and (overlap > max_overlap or assigned_ignored_det)
+                  and ignored_det[j] == 0):
+                max_overlap = overlap
+                det_idx = j
+                valid_detection = 1
+                assigned_ignored_det = False
+            elif (compute_fp and (overlap > min_overlap)
+                  and (valid_detection == NO_DETECTION)
+                  and ignored_det[j] == 1):
+                det_idx = j
+                valid_detection = 1
+                assigned_ignored_det = True
+
+        if (valid_detection == NO_DETECTION) and ignored_gt[i] == 0:
+            fn += 1
+        
+        elif ((valid_detection != NO_DETECTION)
+              and (ignored_gt[i] == 1 or ignored_det[det_idx] == 1)):
+            assigned_detection[det_idx] = True
+       
+        elif valid_detection != NO_DETECTION:
+            tp += 1
+            # thresholds.append(dt_scores[det_idx])
+            thresholds[thresh_idx] = dt_scores[det_idx]
+            thresh_idx += 1
+            if compute_aos:
+                # delta[delta_idx] = gt_alphas[i] - dt_alphas[det_idx]
+                delta[delta_idx]  = gt_datas[i, 6] - gt_boxes[det_idx,6]
+                delta_idx += 1
+            assigned_detection[det_idx] = True
+    
+    if compute_fp:
+        for i in range(det_size):
+            if (not (assigned_detection[i] or ignored_det[i] == -1
+                     or ignored_det[i] == 1 or ignored_threshold[i])):
+                fp += 1
+
+        if compute_aos:
+            tmp = np.zeros((fp + delta_idx, ))
+            # tmp = [0] * fp
+            for i in range(delta_idx):
+                tmp[i + fp] = (1.0 + np.cos(delta[i])) / 2.0
+
+            if tp > 0 or fp > 0:
+                similarity = np.sum(tmp)
+            else:
+                similarity = -1
+    return tp, fp, fn, similarity, thresholds[:thresh_idx]
+
+
+@numba.jit(nopython=True)
+def fused_compute_statistics(overlaps,
+                             pr,
+                             gt_nums,
+                             dt_nums,
+                             dc_nums,
+                             gt_datas,
+                             dt_datas,
+                             ignored_gts,
+                             ignored_dets,
+                             metric,
+                             min_overlap,
+                             thresholds,
+                             compute_aos=False):
+    gt_num = 0
+    dt_num = 0
+    for i in range(gt_nums.shape[0]):
+        for t, thresh in enumerate(thresholds):
+            overlap = overlaps[dt_num:dt_num + dt_nums[i], gt_num:
+                               gt_num + gt_nums[i]]
+
+            gt_data = gt_datas[gt_num:gt_num + gt_nums[i]]
+            dt_data = dt_datas[dt_num:dt_num + dt_nums[i]]
+            ignored_gt = ignored_gts[gt_num:gt_num + gt_nums[i]]
+            ignored_det = ignored_dets[dt_num:dt_num + dt_nums[i]]
+            tp, fp, fn, similarity, _ = compute_statistics_jit(
+                overlap,
+                gt_data,
+                dt_data,
+                ignored_gt,
+                ignored_det,
+                metric,
+                min_overlap=min_overlap,
+                thresh=thresh,
+                compute_fp=True,
+                compute_aos=compute_aos)
+            pr[t, 0] += tp
+            pr[t, 1] += fp
+            pr[t, 2] += fn
+            if similarity != -1:
+                pr[t, 3] += similarity
+        gt_num += gt_nums[i]
+        dt_num += dt_nums[i]
+
+
+def get_results_jit(gt_boxes, dt_boxes, scores, ignored_gts, ignored_dets, min_overlaps, save_path):
+    for  k, min_overlap in enumerate(min_overlaps):
+        pred_boxes = torch.from_numpy(dt_datas).contiguous().cuda(non_blocking=True).float()
+        gt_boxes = torch.from_numpy(gt_datas).contiguous().cuda(non_blocking=True).float()
+        # calculate overlaps based on 3D iou
+        overlaps = iou3d_nms_utils.boxes_iou3d_gpu(pred_boxes, gt_boxes).cpu().numpy()  # (M, N)
+        # max_iou, gt_ind  = torch.max(iou3d, dim=1) # max_overlaps, gt_assignment
+        thresholdss = []
+        for i in range(len(gt_annos)):
+            rets = compute_statistics_jit(
+                overlaps, 
+                gt_boxes[i],
+                dt_boxes[i],
+                ignored_gts[i],
+                ignored_dets[i],
+                dontcares[i],
+                min_overlap=min_overlap,
+                thresh=0.0,
+                compute_fp=True)
+            tp, fp, fn, similarity, thresholds = rets
+            thresholdss += thresholds.tolist()
+        thresholdss = np.array(thresholdss)
+        thresholds = get_thresholds(thresholdss, total_num_valid_gt)
+        thresholds = np.array(thresholds)
+        pr = np.zeros([len(thresholds), 4]) 
+        fused_compute_statistics(
+                        parted_overlaps[j],
+                        pr,
+                        total_gt_num[idx:idx + num_part],
+                        total_dt_num[idx:idx + num_part],
+                        total_dc_num[idx:idx + num_part],
+                        gt_datas_part,
+                        dt_datas_part,
+                        dc_datas_part,
+                        ignored_gts_part,
+                        ignored_dets_part,
+                        metric,
+                        min_overlap=min_overlap,
+                        thresholds=thresholds,
+                        compute_aos=compute_aos)
+        for i in range(len(thresholds)):
+            recall[m, l, k, i] = pr[i, 0] / (pr[i, 0] + pr[i, 2])
+            precision[m, l, k, i] = pr[i, 0] / (pr[i, 0] + pr[i, 1])
+            if compute_aos:
+                aos[m, l, k, i] = pr[i, 3] / (pr[i, 0] + pr[i, 1])
+        for i in range(len(thresholds)):
+            precision[m, l, k, i] = np.max(
+                precision[m, l, k, i:], axis=-1)
+            recall[m, l, k, i] = np.max(recall[m, l, k, i:], axis=-1)
+            if compute_aos:
+                aos[m, l, k, i] = np.max(aos[m, l, k, i:], axis=-1)
+    ret_dict = {
+        "recall": recall,
+        "precision": precision,
+        "orientation": aos,
+    }
