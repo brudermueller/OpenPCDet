@@ -17,3 +17,5 @@ venv/
 /plots
 *.txt
 .vscode
+.ipynb_checkpoints
+*.pdf
