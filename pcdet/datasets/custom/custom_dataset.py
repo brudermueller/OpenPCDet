@@ -1,4 +1,5 @@
 import copy
+import collections
 import pickle
 from pathlib import Path
 
@@ -103,7 +104,7 @@ class CustomDataset(DatasetTemplate):
         self.data_infos.extend(data_infos)
 
         if self.logger is not None:
-            self.logger.info('Total samples for custom dataset: %d' % (len(data_infos)))
+            self.logger.info('Total samples for custom dataset from {}: {}'.format(info_path, len(data_infos)))
 
     def get_label(self, index):
         """ 
@@ -341,9 +342,54 @@ class CustomDataset(DatasetTemplate):
         dt_boxes = np.concatenate([dt['boxes_lidar'] for dt in eval_det_annos],0)
         scores = np.concatenate([dt['score'] for dt in eval_det_annos],0)
 
-        ap_result_str, ap_dict = custom_eval.get_results(dt_boxes, gt_boxes, scores, output_path)
+        tp_mask_total = collections.defaultdict(list)
+        angular_similarity_iou = collections.defaultdict(list)
+        iou_thresholds = np.arange(0.3, 0.9, 0.2)
+        frames_no_dets = []
 
-        return ap_result_str, ap_dict
+        # calculate true positive mask for each frame and each iou threshold
+        for dt in eval_det_annos: 
+            frame_id = dt['frame_id']
+            gt_boxes = self.data_infos[frame_id]['annos']['gt_boxes_lidar']
+            dt_boxes = dt['boxes_lidar']
+            scores = dt['score']
+            num_dets = dt_boxes.shape[0]
+
+            if num_dets == 0: 
+                frames_no_dets.append(frame_id) 
+                continue    
+            # calculate overlaps for different iou thresholds 
+            # separate calculation due to limited GPU memory
+            tp_mask, gt_indices = custom_eval.get_tp_mask_from_overlaps(dt_boxes, gt_boxes, iou_thresholds)
+            for iou, mask in tp_mask.items(): 
+                tp_mask_total[iou].append(mask)
+                # calculate similarity measure from gt_indices 
+                angular_similarity_list = []
+                for i in range(dt_boxes.shape[0]):
+                    angular_similarity_list.append((1+ np.cos(dt_boxes[i, 6] - gt_boxes[gt_indices[i],6]))/2 * mask[i])
+                angular_similarity_iou[iou].append(angular_similarity_list)
+
+        # concatenate all true positive masks over all frame ids for all iou thresholds 
+        tp_mask_concat = {iou: np.concatenate(mask) for iou, mask in tp_mask_total.items()}
+        angular_dict_concat =  {iou: np.concatenate(ang_sim) for iou, ang_sim in angular_similarity_iou.items()}
+        # import pdb
+        # pdb.set_trace()
+        gt_boxes = np.concatenate([gt['gt_boxes_lidar'] for gt in eval_gt_annos],0)
+        dt_boxes = np.concatenate([dt['boxes_lidar'] for dt in eval_det_annos],0)
+        scores = np.concatenate([dt['score'] for dt in eval_det_annos],0)
+
+        result_str, result_dict = custom_eval.get_results_distributed(
+            dt_boxes, gt_boxes, scores, tp_mask_concat, angular_dict_concat, output_path)
+
+        print('Frames without detections: {}'.format(len(frames_no_dets)))
+        with open(f"{output_path}/../frames_without_dets.txt", "w") as output:
+            for frame in frames_no_dets:
+                s = " ".join(map(str, str(frame)))
+                output.write(s+'\n')
+
+        # ap_result_str, ap_dict = custom_eval.get_results(dt_boxes, gt_boxes, scores, output_path)
+
+        return result_str, result_dict
 
 
 def create_custom_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
@@ -354,7 +400,7 @@ def create_custom_infos(dataset_cfg, class_names, data_path, save_path, workers=
     val_filename = save_path / ('custom_infos_%s.pkl' % val_split)
     trainval_filename = save_path / 'custom_infos_trainval.pkl'
     test_filename = save_path / 'custom_infos_test.pkl'
-    test_crowd_filename = save_path / 'custom_infos_test_crowd.pkl'
+    test_crowd_filename = save_path / 'custom_infos_test_crowd_02.pkl'
 
     print('---------------Start to generate data infos---------------')
 
@@ -380,7 +426,7 @@ def create_custom_infos(dataset_cfg, class_names, data_path, save_path, workers=
         pickle.dump(custom_infos_test, f)
     print('Custom info test file is saved to %s' % test_filename)
 
-    dataset.set_split('test_crowd')
+    dataset.set_split('test_crowd_02')
     custom_infos_test_crowd = dataset.get_infos(num_workers=workers, has_label=False, count_inside_pts=False)
     with open(test_crowd_filename, 'wb') as f:
         pickle.dump(custom_infos_test_crowd, f)
