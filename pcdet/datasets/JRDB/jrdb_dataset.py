@@ -6,10 +6,12 @@ import pickle
 from pathlib import Path
 
 import numpy as np
+from sklearn.preprocessing import minmax_scale
+from tqdm import tqdm
 
 from ...ops.roiaware_pool3d import roiaware_pool3d_utils
-from ...utils import (box_utils, common_utils, custom_data_utils,
-                      object3d_jrdb, jrdb_utils, plot_utils)
+from ...utils import (box_utils, common_utils, custom_data_utils, jrdb_utils,
+                      object3d_jrdb, plot_utils)
 from ..dataset import DatasetTemplate
 
 
@@ -143,8 +145,33 @@ class JrdbDataset(DatasetTemplate):
                     box = np.concatenate([xyz, lwh, np.reshape(box_dict['rot_z'], (-1,1))], axis=1)
                     box_list.append(box)
                 label_dict[sequence][frame_num] = box_list 
+        print('Loaded all labels for JRDB')
         self.label_dict = label_dict
+
+    def get_all_ignore_labels(self): 
+        label_dict = collections.defaultdict(dict)
+        for json_file in os.listdir(self.label_dir): 
+            sequence = os.path.basename(os.path.splitext(json_file)[0])
+            file_dict = custom_data_utils.load_json_file(os.path.join(self.label_dir, json_file))
+            for frame, annotations_list in file_dict['labels'].items(): 
+                ignore_mask = np.zeros(len(annotations_list), dtype=bool)
+                frame_num = frame.split('.')[0]
+                for i, anno in enumerate(annotations_list): 
+                    dist = anno['attributes']['distance']
+                    num_points = anno['attributes']['num_points']
+                    if num_points < 5 or dist > 7:
+                        ignore_mask[i] = 1
+                label_dict[sequence][frame_num] = ignore_mask 
+        return label_dict
     
+    def get_ignore_mask(self, index, all_ignore_labels):
+        frame = self.current_samples[index]
+        file_parts = frame.split('/')
+        sequence = file_parts[len(file_parts)-2]   
+        frame_num = file_parts[-1].split('.')[0]
+        ignore_mask = all_ignore_labels[sequence][frame_num]
+        return ignore_mask
+
     def get_label(self, index):
         """ 
         Return bbox annotations per frame, defined as (N,7), i.e. (N x [x, y, z, h, w, l, ry])
@@ -181,6 +208,12 @@ class JrdbDataset(DatasetTemplate):
         pts_upper[:,:3] = jrdb_utils.transform_pts_upper_velodyne_to_base(pts_upper[:, 0:3].T).T
         pts_lower = np.array(custom_data_utils.load_h5_basic(lidar_file_lower), dtype=np.float32)
         pts_lower[:,:3] = jrdb_utils.transform_pts_lower_velodyne_to_base(pts_lower[:, 0:3].T).T
+
+        # scale intensity value 
+        if self.dataset_cfg.POINT_FEATURE_ENCODING.scale_intensity: 
+            pts_upper[:,3] = minmax_scale(pts_upper[:,3], axis=0)
+            pts_lower[:,3] = minmax_scale(pts_lower[:,3], axis=0)
+
         pts_merged = np.concatenate((pts_upper, pts_lower), axis=0)
         return pts_merged
 
@@ -246,7 +279,7 @@ class JrdbDataset(DatasetTemplate):
                     pred_box_lidar = single_pred_dict['boxes_lidar']
                     # print(pred_box_lidar.shape)
                     loc = pred_box_lidar[:, 0:3]
-                    dims = pred_box_lidar[:, 3:6] # wlh -> hwl
+                    dims = pred_box_lidar[:, 3:6] # lwh -> hwl
 
                     for idx in range(len(pred_box_lidar)):
                         print('%s %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f'
@@ -311,7 +344,6 @@ class JrdbDataset(DatasetTemplate):
                         flag = box_utils.in_hull(points[:, 0:3], corners_lidar[k])
                         num_points_in_gt[k] = flag.sum()
                     annotations['num_points_in_gt'] = num_points_in_gt
-
             return info
 
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
@@ -398,6 +430,7 @@ class JrdbDataset(DatasetTemplate):
         if 'annos' not in self.data_infos[0].keys():
             return None, {}
         output_path = Path(kwargs['output_path'])
+        easy_eval = kwargs['easy_eval']
         print(output_path)
 
         from ..custom.eval import evaluate as custom_eval
@@ -406,16 +439,41 @@ class JrdbDataset(DatasetTemplate):
 
         tp_mask_total = collections.defaultdict(list)
         angular_similarity_iou = collections.defaultdict(list)
-        iou_thresholds = np.arange(0.3, 0.9, 0.05)
+        iou_thresholds = np.arange(0.3, 0.9, 0.2)
         frames_no_dets = []
 
+        if easy_eval: 
+            all_ignore_labels = self.get_all_ignore_labels()
         # calculate true positive mask for each frame and each iou threshold
-        for dt in eval_det_annos: 
+        all_gt_boxes = np.empty([0,7])
+        all_dt_boxes = np.empty([0,7])
+        all_scores = np.empty([0])
+
+        for dt in tqdm(eval_det_annos):             
             frame_id = dt['frame_id']
+            # print('--------- {} --------- '.format(frame_id))
             gt_boxes = self.data_infos[frame_id]['annos']['gt_boxes_lidar']
             dt_boxes = dt['boxes_lidar']
             scores = dt['score']
             num_dets = dt_boxes.shape[0]
+            if easy_eval:
+                ignore_mask = self.get_ignore_mask(frame_id, all_ignore_labels)
+                # print('Ignoring {} objects for evaluation. '.format(np.sum(~ignore_mask)))
+                gt_boxes = self.data_infos[frame_id]['annos']['gt_boxes_lidar'][~ignore_mask, :]
+                if gt_boxes.shape[0]== 0: 
+                    continue
+                # also ignore detections further away than distance threshold 
+                dt_boxes = dt['boxes_lidar']
+                center_depth = np.linalg.norm(dt_boxes[:, 0:3], axis=1)
+                det_include_idx = np.where(center_depth < 7)[0]
+                dt_boxes = dt_boxes[det_include_idx, :]
+                
+                scores = dt['score'][det_include_idx]
+                num_dets = dt_boxes.shape[0]
+
+            all_gt_boxes = np.concatenate((all_gt_boxes, gt_boxes),0)
+            all_dt_boxes = np.concatenate((all_dt_boxes, dt_boxes),0) 
+            all_scores = np.concatenate((all_scores, scores),0)
 
             if num_dets == 0: 
                 frames_no_dets.append(frame_id) 
@@ -428,25 +486,28 @@ class JrdbDataset(DatasetTemplate):
                 # calculate similarity measure from gt_indices 
                 angular_similarity_list = []
                 for i in range(dt_boxes.shape[0]):
-                    angular_similarity_list.append((1+ np.cos(dt_boxes[i, 6] - gt_boxes[gt_indices[i],6])) * mask[i])
+                    angular_similarity_list.append((1+ np.cos(dt_boxes[i, 6] - gt_boxes[gt_indices[i],6]))/2 * mask[i])
                 angular_similarity_iou[iou].append(angular_similarity_list)
-
+            
         # concatenate all true positive masks over all frame ids for all iou thresholds 
         tp_mask_concat = {iou: np.concatenate(mask) for iou, mask in tp_mask_total.items()}
         angular_dict_concat =  {iou: np.concatenate(ang_sim) for iou, ang_sim in angular_similarity_iou.items()}
-        gt_boxes = np.concatenate([gt['gt_boxes_lidar'] for gt in eval_gt_annos],0)
-        dt_boxes = np.concatenate([dt['boxes_lidar'] for dt in eval_det_annos],0)
-        scores = np.concatenate([dt['score'] for dt in eval_det_annos],0)
+        # gt_boxes = np.concatenate([gt['gt_boxes_lidar'] for gt in eval_gt_annos],0)
+        # dt_boxes = np.concatenate([dt['boxes_lidar'] for dt in eval_det_annos],0)
+        # scores = np.concatenate([dt['score'] for dt in eval_det_annos],0)
 
-        result_str, ap_dict, ahs_dict = custom_eval.get_results_distributed(
-            dt_boxes, gt_boxes, scores, tp_mask_concat, angular_dict_concat, output_path)
+        # result_str, result_dict, pr_dict = custom_eval.get_results_distributed(
+        #     dt_boxes, gt_boxes, scores, tp_mask_concat, angular_dict_concat, output_path)
+
+        result_str, result_dict = custom_eval.get_results_distributed(
+            all_dt_boxes, all_gt_boxes, all_scores, tp_mask_concat, angular_dict_concat, output_path)
 
         print('Frames without detections: {}'.format(len(frames_no_dets)))
         with open(f"{output_path}/../frames_without_dets.txt", "w") as output:
             for frame in frames_no_dets:
                 s = " ".join(map(str, str(frame)))
                 output.write(s+'\n')
-        return result_str, ap_dict
+        return result_str, result_dict
 
 
 def create_jrdb_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
