@@ -11,24 +11,27 @@ class DataProcessor(object):
         self.training = training
         self.mode = 'train' if training else 'test'
         self.grid_size = self.voxel_size = None
-        self.data_processor_queue = []
+        self.data_processor_queue = {}
         for cur_cfg in processor_configs:
             cur_processor = getattr(self, cur_cfg.NAME)(config=cur_cfg)
-            self.data_processor_queue.append(cur_processor)
+            self.data_processor_queue[cur_cfg.NAME] = cur_processor
 
     def mask_points_and_boxes_outside_range(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.mask_points_and_boxes_outside_range, config=config)
         mask = common_utils.mask_points_by_range(data_dict['points'], self.point_cloud_range)
+        # print('Excluded {} points outside range'.format(data_dict['points'].shape[0]-mask.sum()))
         data_dict['points'] = data_dict['points'][mask]
         if data_dict.get('gt_boxes', None) is not None and config.REMOVE_OUTSIDE_BOXES and self.training:
-            # print('****** Filter out boxes outside range ******')
-            
             mask = box_utils.mask_boxes_outside_range_numpy(
                 data_dict['gt_boxes'], self.point_cloud_range, min_num_corners=config.get('min_num_corners', 1), 
                 bonx_enc_default=config.BOX_ENC_DEFAULT, rot_mat_alt=config.ROT_MAT_ALT
             )
+            num_before_mask = data_dict['gt_boxes'].shape[0]
             data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
+            num_after_mask = data_dict['gt_boxes'].shape[0]
+            # print(f'Choosing {num_before_mask}/{num_before_mask} boxes')
+
         return data_dict
 
     def shuffle_points(self, data_dict=None, config=None):
@@ -87,11 +90,10 @@ class DataProcessor(object):
 
         points = data_dict['points']
         if num_points < len(points):
-            pts_depth = np.linalg.norm(points[:, 0:3], axis=1)
+            pts_depth = np.linalg.norm(points[:, 0:3], axis=1)            
             pts_near_flag = pts_depth < 20.0
             far_idxs_choice = np.where(pts_near_flag == 0)[0]
             near_idxs = np.where(pts_near_flag == 1)[0]
-            near_idxs_choice = np.random.choice(near_idxs, num_points - len(far_idxs_choice), replace=False)
             choice = []
             if num_points > len(far_idxs_choice):
                 near_idxs_choice = np.random.choice(near_idxs, num_points - len(far_idxs_choice), replace=False)
@@ -121,8 +123,8 @@ class DataProcessor(object):
 
         Returns:
         """
-
-        for cur_processor in self.data_processor_queue:
+        for name, cur_processor in self.data_processor_queue.items():
+            # print('DATA PROCESSOR: {}'.format(name))
             data_dict = cur_processor(data_dict=data_dict)
 
         return data_dict

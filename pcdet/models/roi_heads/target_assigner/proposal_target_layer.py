@@ -33,6 +33,7 @@ class ProposalTargetLayer(nn.Module):
             batch_dict=batch_dict
         )
         # regression valid mask
+        # if boxes exceed overlap iou threshold with gt box 
         reg_valid_mask = (batch_roi_ious > self.roi_sampler_cfg.REG_FG_THRESH).long()
 
         # classification label
@@ -41,7 +42,8 @@ class ProposalTargetLayer(nn.Module):
             ignore_mask = (batch_roi_ious > self.roi_sampler_cfg.CLS_BG_THRESH) & \
                           (batch_roi_ious < self.roi_sampler_cfg.CLS_FG_THRESH)
             batch_cls_labels[ignore_mask > 0] = -1
-        elif self.roi_sampler_cfg.CLS_SCORE_TYPE == 'roi_iou':
+
+        elif self.roi_sampler_cfg.CLS_SCORE_TYPE == 'roi_iou': # use iou metric to predict confidence scores
             iou_bg_thresh = self.roi_sampler_cfg.CLS_BG_THRESH
             iou_fg_thresh = self.roi_sampler_cfg.CLS_FG_THRESH
             fg_mask = batch_roi_ious > iou_fg_thresh
@@ -146,6 +148,7 @@ class ProposalTargetLayer(nn.Module):
             rand_num = torch.from_numpy(rand_num).type_as(max_overlaps).long()
             fg_inds = fg_inds[rand_num]
             bg_inds = []
+            return fg_inds 
 
         elif bg_num_rois > 0 and fg_num_rois == 0:
             # sampling bg

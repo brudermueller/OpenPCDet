@@ -2,6 +2,9 @@ import argparse
 import datetime
 import glob
 import os
+
+# os.environ["CUDA_VISIBLE_DEVICES"]="1"
+
 from pathlib import Path
 from test import repeat_eval_ckpt
 
@@ -56,6 +59,7 @@ def parse_config():
 
 
 def main():
+    print('Cuda visible devices: {}'.format(torch.cuda.device_count()))
     args, cfg = parse_config()
     if args.launcher == 'none':
         dist_train = False
