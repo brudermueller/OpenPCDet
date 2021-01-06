@@ -125,7 +125,7 @@ class PointRCNNHead(RoIHeadTemplate):
             pooled_features = pooled_features.view(-1, pooled_features.shape[-2], pooled_features.shape[-1])
             pooled_features[:, :, 0:3] = common_utils.rotate_points_along_z(
                 pooled_features[:, :, 0:3], -rois.view(-1, rois.shape[-1])[:, 6], 
-                rot_mat_alt=self.model_cfg.DATA_CONFIG._ROT_MAT_ALT
+                rot_mat_alt=self.model_cfg._ROT_MAT_ALT
             )
             pooled_features[pooled_empty_flag.view(-1) > 0] = 0
         return pooled_features
@@ -147,13 +147,15 @@ class PointRCNNHead(RoIHeadTemplate):
             batch_dict['roi_labels'] = targets_dict['roi_labels']
 
         pooled_features = self.roipool3d_gpu(batch_dict)  # (total_rois, num_sampled_points, 3 + C)
-
-        xyz_input = pooled_features[..., 0:self.num_prefix_channels].transpose(1, 2).unsqueeze(dim=3)
+        
+        # avoid a bug about the non-contiguous gradient
+        xyz_input = pooled_features[..., 0:self.num_prefix_channels].transpose(1, 2).unsqueeze(dim=3).contiguous() 
         xyz_features = self.xyz_up_layer(xyz_input)
         point_features = pooled_features[..., self.num_prefix_channels:].transpose(1, 2).unsqueeze(dim=3)
         merged_features = torch.cat((xyz_features, point_features), dim=1)
-        merged_features = self.merge_down_layer(merged_features)
+        merged_features = self.merge_down_layer(merged_features) # merged features for PointNet 
 
+        # obtain discriminative features via PointNet structure for confidence clf and box refinement 
         l_xyz, l_features = [pooled_features[..., 0:3].contiguous()], [merged_features.squeeze(dim=3).contiguous()]
 
         for i in range(len(self.SA_modules)):
