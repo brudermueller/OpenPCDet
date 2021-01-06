@@ -1,3 +1,6 @@
+import numpy as np 
+from mayavi import mlab
+
 def draw_lidar_cam(pc, color=None, fig=None):
     ''' Simple setup to draw lidar points in camera coordinate system.'''
     
@@ -186,7 +189,7 @@ def compute_box_3d(obj, gt=False):
     
     # rotate and translate 3d bounding box
     corners_3d = np.dot(R, np.vstack([x_corners,y_corners,z_corners])).T
-    corners_3d += obj.pos 
+    corners_3d += obj.loc 
     return corners_3d
 
 def compute_box_3d_velo(obj): 
@@ -213,7 +216,7 @@ def compute_box_3d_velo(obj):
     corners3d = np.vstack([x_corners, y_corners, z_corners])  # (3, 8)
     # transpose and rotate around orientation angle 
     corners3d = np.dot(R, corners3d).T
-    corners3d = corners3d + obj.pos
+    corners3d = corners3d + obj.loc
     return corners3d
 
 def show_lidar_with_boxes(pc_cam, objects, gt_objects=None, best_prop_only=False,foreground=None): 
@@ -240,7 +243,7 @@ def show_lidar_with_boxes(pc_cam, objects, gt_objects=None, best_prop_only=False
             best_proposal = objects[best_id]
             box3d_pts_3d = compute_box_3d(best_proposal) 
             obj = best_proposal
-            mlab.points3d(obj.pos[2], -obj.pos[0], -obj.pos[1], color=(1,1,1), mode='sphere', scale_factor=0.2, figure=fig)
+            mlab.points3d(obj.loc[2], -obj.loc[0], -obj.loc[1], color=(1,1,1), mode='sphere', scale_factor=0.2, figure=fig)
             
             draw_gt_boxes3d([box3d_pts_3d], fig=fig)
     
@@ -255,7 +258,7 @@ def show_lidar_with_boxes(pc_cam, objects, gt_objects=None, best_prop_only=False
                 # Draw 3d bounding box
                 pred_box3d_pts_3d = compute_box_3d(obj, gt=True) 
                 draw_gt_boxes3d([pred_box3d_pts_3d], fig=fig, color=(0,1,0))
-                mlab.points3d(obj.pos[2], -obj.pos[0], -obj.pos[1], color=(1,1,1), mode='sphere', scale_factor=0.2, figure=fig)
+                mlab.points3d(obj.loc[2], -obj.loc[0], -obj.loc[1], color=(1,1,1), mode='sphere', scale_factor=0.2, figure=fig)
 
     if foreground is not None: 
         # plot foreground segmentation results
