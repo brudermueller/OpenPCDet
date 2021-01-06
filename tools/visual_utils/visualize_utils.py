@@ -173,7 +173,11 @@ def draw_multi_grid_range(fig, grid_size=5, bv_range=(-60, -60, 60, 60)):
     return fig
 
 
-def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_scores=None, ref_labels=None, show_intensity=True, bgcolor=(0.,0.,0.)):
+def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_scores=None, ref_labels=None, 
+                show_intensity=True, bgcolor=(0.,0.,0.), scores=None, dist_mask=None, num_pts_mask=None, 
+                det_ignore_mask=None):
+
+    num_gts=num_dets=0
     if not isinstance(points, np.ndarray):
         points = points.cpu().numpy()
     if ref_boxes is not None and not isinstance(ref_boxes, np.ndarray):
@@ -188,23 +192,36 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_scores=None, ref_labe
     fig = visualize_pts(points, bgcolor=bgcolor, show_intensity=show_intensity, size=(1000, 600))
     # fig = draw_multi_grid_range(fig, bv_range=(-5, -20, 40, 20))
     if gt_boxes is not None:
+        num_gts = len(gt_boxes)
         corners3d = boxes_to_corners_3d(gt_boxes)
-        fig = draw_corners3d(corners3d, fig=fig, color=(0, 0, 1), max_num=100)
+        fig = draw_corners3d(corners3d, fig=fig, color=(0, 0, 1), max_num=100, dist_mask=dist_mask, num_pts_mask=num_pts_mask)
 
     if ref_boxes is not None and len(ref_boxes) > 0:
+        num_dets = len(ref_boxes)
         ref_corners3d = boxes_to_corners_3d(ref_boxes)
         if ref_labels is None:
-            fig = draw_corners3d(ref_corners3d, fig=fig, color=(0, 1, 0), cls=ref_scores, max_num=100)
+            fig = draw_corners3d(ref_corners3d, fig=fig, color=(0, 1, 0), cls=ref_scores, max_num=100, scores=scores, dist_mask=det_ignore_mask)
         else:
             for k in range(ref_labels.min(), ref_labels.max() + 1):
                 cur_color = tuple(box_colormap[k % len(box_colormap)])
                 mask = (ref_labels == k)
                 fig = draw_corners3d(ref_corners3d[mask], fig=fig, color=cur_color, cls=ref_scores[mask], max_num=100)
-    mlab.view(azimuth=-179, elevation=54.0, distance=104.0, roll=90.0)
+    tit = mlab.title('{} predictions, {} ground truth objects'.format(num_dets, num_gts), size=0.2, height=0.05)
+    # mlab.text3d(, b[4,1], b[4,2], '%.2f'%scores[n], scale=(0.3,0.3,0.3), color=color, figure=fig)
+    # tit.actor.text_scale_mode = True 
+    tit.actor.text_property.font_family = 'times'
+    tit.actor.text_property.font_size = 5
+    tit.actor.text_property.italic = False
+    # mlab.view(azimuth=-180, elevation=180.0, distance=40.0, roll=90.0, focalpoint=(0, 0, 0))
+    mlab.view(azimuth=-180, elevation=5, roll=90.0, distance=40.0, focalpoint=(0, 0, 0))
+
+
+    mlab.orientation_axes()
     return fig
 
 
-def draw_corners3d(corners3d, fig, color=(1, 1, 1), line_width=2, cls=None, tag='', max_num=500, tube_radius=None):
+def draw_corners3d(corners3d, fig, color=(1, 1, 1), line_width=2, cls=None, tag='', max_num=500, tube_radius=None, 
+                    scores=None, dist_mask=None, num_pts_mask=None):
     """
     :param corners3d: (N, 8, 3)
     :param fig:
@@ -216,9 +233,21 @@ def draw_corners3d(corners3d, fig, color=(1, 1, 1), line_width=2, cls=None, tag=
     :return:
     """
     import mayavi.mlab as mlab
+    original_color = color
     num = min(max_num, len(corners3d))
     for n in range(num):
+        dist_flag = pts_flag = 0 
         b = corners3d[n]  # (8, 3)
+        if dist_mask is not None and dist_mask[n]: 
+            color = (1, 0, 0)
+            dist_flag=1
+        if num_pts_mask is not None and num_pts_mask[n]: 
+            color = (1, 1, 0)
+            pts_flag=1
+        if dist_flag and pts_flag: 
+            color = (1, 0.5, 0)
+        if scores is not None: # append scores to bbox predictions
+            mlab.text3d(b[4,0], b[4,1], b[4,2], '%.2f'%scores[n], scale=(0.4,0.4,0.4), color=color, figure=fig)
 
         if cls is not None:
             if isinstance(cls, np.ndarray):
@@ -245,5 +274,5 @@ def draw_corners3d(corners3d, fig, color=(1, 1, 1), line_width=2, cls=None, tag=
         i, j = 1, 4
         mlab.plot3d([b[i, 0], b[j, 0]], [b[i, 1], b[j, 1]], [b[i, 2], b[j, 2]], color=color, tube_radius=tube_radius,
                     line_width=line_width, figure=fig)
-
+        color = original_color
     return fig
