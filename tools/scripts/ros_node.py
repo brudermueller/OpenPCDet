@@ -81,24 +81,13 @@ class Detector_3d:
             rospy.get_param('~detector_config',
                             '../../models/ros_node_model/checkpoint_epoch_80.pth')
         
-        # self.velodyne_msg = \
-        #     message_filters.Subscriber("/front_lidar/velodyne_points", PointCloud2, queue_size=2)
 
         # load model config 
         self.setup_model()
-
-        # self.time_sync = \
-        #     message_filters.ApproximateTimeSynchronizer([self.velodyne_msg], 5, 0.06)
-        # self.time_sync.registerCallback(self.detector_callback)
-
         sub_ = rospy.Subscriber("/front_lidar/velodyne_points", PointCloud2, self.detector_callback, queue_size=1, buff_size=2**24)
-
-
-        # self.debug_pub = rospy.Publisher("/test", Int8, queue_size=1)
-        
-        # self.marker_box_pub = rospy.Publisher("/3d_detection_markers", MarkerArray, queue_size=10)
         self.pub_arr_bbox = rospy.Publisher("/detection_markers", BoundingBoxArray, queue_size=1)
-        # self.pub_arr_bbox = rospy.Publisher("/3d_detection_markers", BoundingBoxArray, queue_size=10)
+
+        self.inference_times = []
 
         rospy.loginfo("3D detector ready.")
 
@@ -116,7 +105,7 @@ class Detector_3d:
 
     def run_model(self, points):
         t_t = time.time()
-        rospy.loginfo('Input: pointcloud with shape {}'.format(points.shape))
+        # rospy.loginfo('Input: pointcloud with shape {}'.format(points.shape))
         input_dict = {
             'points': points,
             'frame_id': 0,
@@ -134,7 +123,10 @@ class Detector_3d:
             pred_dicts, _ = self.net(data_dict)
         
         torch.cuda.synchronize()
+        inference_time = time.time() - t
+        self.inference_times.append(inference_time)
         rospy.loginfo(f" PointRCNN inference cost time: {time.time() - t}")
+        rospy.loginfo("Stdev: {}".format(np.std(self.inference_times)))
 
         boxes_lidar = pred_dicts[0]["pred_boxes"].detach().cpu().numpy()
         scores = pred_dicts[0]["pred_scores"].detach().cpu().numpy()
@@ -206,6 +198,7 @@ def main(args):
         rospy.spin()
     except KeyboardInterrupt:
         print("Shutting down 3D-Detection node.")
+        print(np.std(Detector_3d.inference_times))
 
 if __name__ == '__main__':
     main(sys.argv)
