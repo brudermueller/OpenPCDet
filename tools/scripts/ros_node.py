@@ -1,7 +1,3 @@
-""" 
-Taken from: https://raw.githubusercontent.com/StanfordVL/JRMOT_ROS/master/src/3d_detector.py
-TODO: to be adapted to our purpose, just serves as inspiration 
-"""
 import os
 import pdb
 import sys
@@ -73,11 +69,11 @@ class Detector_3d:
         self.net = None 
 
         
-        self.detector_config = \
+        self.model_path = \
             rospy.get_param('~model_path',
                             '../../models/ros_node_model/pointrcnn.yaml')
         
-        self.model_path = \
+        self.detector_config = \
             rospy.get_param('~detector_config',
                             '../../models/ros_node_model/checkpoint_epoch_80.pth')
         

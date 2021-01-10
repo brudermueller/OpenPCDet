@@ -1,5 +1,3 @@
-<img src="docs/open_mmlab.png" align="right" width="30%">
-
 # OpenPCDet
 
 `OpenPCDet` is a clear, simple, self-contained open source project for LiDAR-based 3D object detection. 
@@ -8,6 +6,7 @@ It is also the official code release of [`[PointRCNN]`](https://arxiv.org/abs/18
 
 
 ## Overview
+- [Additional Documentation](#additional-documentation)
 - [Changelog](#changelog)
 - [Design Pattern](#openpcdet-design-pattern)
 - [Model Zoo](#model-zoo)
@@ -16,8 +15,58 @@ It is also the official code release of [`[PointRCNN]`](https://arxiv.org/abs/18
 - [Getting Started](docs/GETTING_STARTED.md)
 - [Citation](#citation)
 
+***
+## Additional Documentation
+This section gives an overview of the changes and extensions made to this toolbox for means of adjusting the _PointRCNN_ architecture to indoor environments and close-proximities. These have been developed in the context of a master project aiming at __People Detection in Close-Proximity for Robot Navigation in Crowds based on 3D LiDAR Data__ at the _Learning Algorithms and Systems Laboratory_ at EPFL. The documnentation provided by the authors on how to use this toolbox in general can be found subsequent to this section. 
+### ROS Node 
+For real-time inference on the robot, a ROS node can be run from the scripts: `scripts/ros_node`. It subscribes to the Velodyne LiDAR topic and feeds the received point clouds into a pre-trained model. For now, it only subscribes to one laser topic (i.e. "/front_lidar/velodyne_points"). If more, or other lasers should be taken into account, this step needs to be adapted and the point clouds would need to be merged in a pre-processing step before they are input into the network. The default values for the ROS parameters `model_path` and `detector_config` can be changed according to which pre-trained model (`.pth`-file) and which corresponding pointrcnn-config (`.yaml`-file) should be used, using `rosparam set` in the command line. Also, make sure that a master node is running. 
 
+``` python
+python3 tools/scripts/ros_node.py
+```
+
+### Models 
+
+
+### Visual Utils 
+All code for the purpose of visualizing bounding box detections, as well as the ground truth and the point clouds themselves, can be found in `tools/visual_utils'. Two notebooks have released which can be used to interactively plot and visualize the data, also via ssh. For ssh-usage run 
+```
+jupyter notebook --no-browser --port 8890
+```
+in the `visual_utils` directory from the command line on the remote machine. The port can be also changed, if necessary. Then, on your local machine, run
+```
+ssh -N -f -L localhost:8890:localhost:8890 username@IP_address
+```
+
+### Data
+The toolbox applicability has been extended to two additional datasets. This concerns new dataset classes, as well as evaluation and pre-processing tools. 
+1. A __custom__ dataset which has been recorded from a Velodyne LiDAR VLP-16 sensor in the course of this master thesis. The corresponding source code and logic can be found in `pcdet/datasets/custom/`.
+2. The __JRDB__ [dataset](https://jrdb.stanford.edu/dataset/about), which is the so far largest benchmark dataset for 2D-3D person tracking and detection. The corresponding source code and logic can be found in `pcdet/datasets/JRDB/`.
+
+### Useful example commands to get started 
+- Create pickle-files to initialize a new dataset (only necessary once, if you want to change something in the data input)
+  ```
+  python3 -m pcdet.datasets.JRDB.jrdb_dataset create_jrdb_infos tools/cfgs/dataset_configs/jrdb_dataset.yaml
+  ```
+- Train a model with multiple GPUs (in this example with 2 GPUS and the weights of a pre-trained model): 
+  ```
+  bash scripts/dist_train.sh 2 --cfg_file cfgs/jrdb_models/pointrcnn.yaml --extra_tag jrdb_exp_xy --ckpt_save_interval 1 --pretrained_model ../output/custom_models/pointrcnn/l1_corner_loss_80epochs/ckpt/checkpoint_epoch_80.pth  
+  ```
+
+- Train with one GPU only: 
+  ```
+  python3 train.py --cfg_file cfgs/jrdb_models/pointrcnn_no_pretrained.yaml --extra_tag jrdb_indoor_exp20 --ckpt_save_interval 1
+  ```
+
+- Test/Validate a model with multiple GPUs: 
+  ``` 
+  bash scripts/dist_test.sh 2 --cfg_file cfgs/jrdb_models/pointrcnn_angle_loss.yaml --batch_size 4 --eval_tag jrdb --extra_tag jrdb30_angle_loss  --ckpt ../output/jrdb_models/jrdb_exp30_angle_loss/ckpt/checkpoint_epoch_30.pth --save_to_file
+  ```
+
+***
 ## Changelog
+[2021-01-10] Add support for two new indoor datasets, extend visualization tools, add real-time ROS node, add model configurations for indoor/crowd-navigation.
+
 [2020-11-10] **NEW:** The [Waymo Open Dataset](#waymo-open-dataset-baselines) has been supported with state-of-the-art results. Currently we provide the 
 configs and results of `SECOND`, `PartA2` and `PV-RCNN` on the Waymo Open Dataset, and more models could be easily supported by modifying their dataset configs. 
 
