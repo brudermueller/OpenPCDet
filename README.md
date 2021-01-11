@@ -19,11 +19,14 @@ It is also the official code release of [`[PointRCNN]`](https://arxiv.org/abs/18
 ## Additional Documentation
 This section gives an overview of the changes and extensions made to this toolbox for means of adjusting the _PointRCNN_ architecture to indoor environments and close-proximities. These have been developed in the context of a master project aiming at __People Detection in Close-Proximity for Robot Navigation in Crowds based on 3D LiDAR Data__ at the _Learning Algorithms and Systems Laboratory_ at EPFL. The documnentation provided by the authors on how to use this toolbox in general can be found subsequent to this section. 
 ### ROS Node 
-For real-time inference on the robot, a ROS node can be run from the scripts: `scripts/ros_node`. It subscribes to the Velodyne LiDAR topic and feeds the received point clouds into a pre-trained model. For now, it only subscribes to one laser topic (i.e. "/front_lidar/velodyne_points"). If more, or other lasers should be taken into account, this step needs to be adapted and the point clouds would need to be merged in a pre-processing step before they are input into the network. The default values for the ROS parameters `model_path` and `detector_config` can be changed according to which pre-trained model (`.pth`-file) and which corresponding pointrcnn-config (`.yaml`-file) should be used, using `rosparam set` in the command line. Also, make sure that a master node is running. 
+For real-time inference on the robot, a ROS node can be run from the scripts: `scripts/ros_node`. It subscribes to the Velodyne LiDAR topic and feeds the received point clouds into a pre-trained model. For now, it only subscribes to one laser topic (i.e. "/front_lidar/velodyne_points"). If more, or other lasers should be taken into account, this step needs to be adapted and the point clouds would need to be merged in a pre-processing step before they are input into the network. The default values for the ROS parameters `model_path` and `detector_config` can be changed according to which pre-trained model (`.pth`-file) and which corresponding pointrcnn-config (`.yaml`-file) should be used, using `rosparam set` in the command line. Also, make sure that a master node is running. Below, an example screenshot of the detector output in RViz is shown. 
 
 ``` python
 python3 tools/scripts/ros_node.py
 ```
+<p align="center">
+  <img src="docs/video_screenshot.png" width="60%" height="320">
+</p>
 
 ### Visual Utils 
 All code for the purpose of visualizing bounding box detections, as well as the ground truth and the point clouds themselves, can be found in `tools/visual_utils'. Two notebooks have released which can be used to interactively plot and visualize the data, also via ssh. For ssh-usage run 
@@ -34,6 +37,11 @@ in the `visual_utils` directory from the command line on the remote machine. The
 ```
 ssh -N -f -L localhost:8890:localhost:8890 username@IP_address
 ```
+Example plot of trained model's detections using the _mayavi_ visualization package. (Blue = ground truth, green = prediction incl. score, red and orange = constrained evaluation).
+<p align="center">
+  <img src="docs/visual_utils_example.png" width="60%" height="320">
+</p>
+
 
 ### Data
 The toolbox applicability has been extended to two additional datasets. This concerns new dataset classes, as well as evaluation and pre-processing tools. 
