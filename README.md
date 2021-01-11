@@ -43,9 +43,15 @@ The toolbox applicability has been extended to two additional datasets. This con
 ### Models 
 After training/testing the models the output (`.pth`-files for the models themselves and `.txt`-files for the detections when testing) is saved to `/output`. 
 
-The configuration for training/testing is set in yaml-config files, which can be found in `/tools/cfgs/` and they depend on the dataset to be used. Whith each train/test run a backup of the corresponding config file will also be placed in the output folder, in case the same configuration file will be changed for other models afterwards. The best performing model on the JRDB dataset, without constraining the evaluation, has been trained using `tools/cfgs/jrdb_models/pointrcnn_no_aug.yaml` and it has been saved to `/output/jrdb_models/jrdb_exp27_no_aug/`. 
+The configuration for training/testing is set in yaml-config files, which can be found in `/tools/cfgs/` and they depend on the dataset to be used. Whith each train/test run a backup of the corresponding config file will also be placed in the output folder, in case the same configuration file will be changed for other models afterwards. 
 
-For the JRDB dataset, models were also trained on a dataset which has been reduced to __indoor__ scenes only. The best performing model has been trained using `tools/cfgs/jrdb_models/pointrcnn_indoor.yaml` and has been saved to `/output/jrdb_models/jrdb_indoor_exp31/`. The evaluation/testing code has been also extended with a functionality to constrain the evaluation by a maximum distance of the ground truth objects to the sensor, as well as the minimum number of points per object point cloud. This functionality can be used by adding `--ignore_hard_class` as an argument on the command line.  
+- __JRDB__
+  The best performing model on the JRDB dataset, without constraining the evaluation, has been trained using `tools/cfgs/jrdb_models/pointrcnn_no_aug.yaml` and it has been saved to `/output/jrdb_models/jrdb_exp27_no_aug/`. 
+
+  In addition, models were also trained on a JRDB dataset which has been reduced to __indoor__ scenes only. The best performing model has been trained using `tools/cfgs/jrdb_models/pointrcnn_indoor.yaml` and has been saved to `/output/jrdb_models/jrdb_indoor_exp31/`. The evaluation/testing code has been also extended with a functionality to constrain the evaluation by a maximum distance of the ground truth objects to the sensor, as well as the minimum number of points per object point cloud. This functionality can be used by adding `--ignore_hard_class` as an argument on the command line.  
+
+- __Custom Dataset__
+  The best performing model on the custom dataset has been trained using `tools/cfgs/custom_models/pointrcnn.yaml` and it has been saved to `/output/custom_models/pointrcnnn/l1_corner_loss_80epochs`. 
 
 ### Useful example commands to get started 
 - Create pickle-files to initialize a new dataset (only necessary once, if you want to change something in the data input)
