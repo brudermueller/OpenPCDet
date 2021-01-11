@@ -8,12 +8,14 @@ ROT_MAT_ALT: True
 
 DATA_SPLIT: {
     'train': train,
-    'test': val
+    # 'test': val
+    'test': train
 }
 
 INFO_PATH: {
     'train': [jrdb_infos_train.pkl],
-    'test': [jrdb_infos_val.pkl],
+    # 'test': [jrdb_infos_val.pkl],
+    'test': [jrdb_infos_train.pkl],
 }
 
 FOV_POINTS_ONLY: False

@@ -2,6 +2,8 @@ CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
 
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/kitti_dataset.yaml
+    _BOX_ENC_DEFAULT: False # affects the style of how the corners are encoded 
+    _ROT_MAT_ALT: False # if True the minus sign of the yaw rotation matrix of the sinus is in the second column instead of the first
 
     DATA_PROCESSOR:
         -   NAME: mask_points_and_boxes_outside_range
@@ -35,7 +37,9 @@ MODEL:
         FP_MLPS: [[128, 128], [256, 256], [512, 512], [512, 512]]
 
     POINT_HEAD:
-        NAME: PointHeadBox
+        NAME: PointHeadBox        
+        _ROT_MAT_ALT: False
+        _BOX_ENC_DEFAULT: False
         CLS_FC: [256, 256]
         REG_FC: [256, 256]
         CLASS_AGNOSTIC: False
@@ -63,6 +67,8 @@ MODEL:
     ROI_HEAD:
         NAME: PointRCNNHead
         CLASS_AGNOSTIC: True
+        _BOX_ENC_DEFAULT: False 
+        _ROT_MAT_ALT: False
 
         ROI_POINT_POOL:
             POOL_EXTRA_WIDTH: [0.0, 0.0, 0.0]

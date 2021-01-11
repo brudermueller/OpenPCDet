@@ -25,9 +25,6 @@ For real-time inference on the robot, a ROS node can be run from the scripts: `s
 python3 tools/scripts/ros_node.py
 ```
 
-### Models 
-
-
 ### Visual Utils 
 All code for the purpose of visualizing bounding box detections, as well as the ground truth and the point clouds themselves, can be found in `tools/visual_utils'. Two notebooks have released which can be used to interactively plot and visualize the data, also via ssh. For ssh-usage run 
 ```
@@ -42,6 +39,13 @@ ssh -N -f -L localhost:8890:localhost:8890 username@IP_address
 The toolbox applicability has been extended to two additional datasets. This concerns new dataset classes, as well as evaluation and pre-processing tools. 
 1. A __custom__ dataset which has been recorded from a Velodyne LiDAR VLP-16 sensor in the course of this master thesis. The corresponding source code and logic can be found in `pcdet/datasets/custom/`.
 2. The __JRDB__ [dataset](https://jrdb.stanford.edu/dataset/about), which is the so far largest benchmark dataset for 2D-3D person tracking and detection. The corresponding source code and logic can be found in `pcdet/datasets/JRDB/`.
+
+### Models 
+After training/testing the models the output (`.pth`-files for the models themselves and `.txt`-files for the detections when testing) is saved to `/output`. 
+
+The configuration for training/testing is set in yaml-config files, which can be found in `/tools/cfgs/` and they depend on the dataset to be used. Whith each train/test run a backup of the corresponding config file will also be placed in the output folder, in case the same configuration file will be changed for other models afterwards. The best performing model on the JRDB dataset, without constraining the evaluation, has been trained using `tools/cfgs/jrdb_models/pointrcnn_no_aug.yaml` and it has been saved to `/output/jrdb_models/jrdb_exp27_no_aug/`. 
+
+For the JRDB dataset, models were also trained on a dataset which has been reduced to __indoor__ scenes only. The best performing model has been trained using `tools/cfgs/jrdb_models/pointrcnn_indoor.yaml` and has been saved to `/output/jrdb_models/jrdb_indoor_exp31/`. The evaluation/testing code has been also extended with a functionality to constrain the evaluation by a maximum distance of the ground truth objects to the sensor, as well as the minimum number of points per object point cloud. This functionality can be used by adding `--ignore_hard_class` as an argument on the command line.  
 
 ### Useful example commands to get started 
 - Create pickle-files to initialize a new dataset (only necessary once, if you want to change something in the data input)
